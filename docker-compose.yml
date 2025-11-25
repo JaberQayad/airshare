@@ -1,0 +1,13 @@
+version: '3.8'
+
+services:
+  airshare:
+    build: .
+    ports:
+      - "4111:3000"
+    environment:
+      - PORT=3000
+      - NODE_ENV=production
+    volumes:
+      - .:/app
+      - /app/node_modules

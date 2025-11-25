@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AirShare</title>
+    <link rel="stylesheet" href="css/styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+
+<body>
+    <div class="background-shapes">
+        <div class="shape shape-1"></div>
+        <div class="shape shape-2"></div>
+    </div>
+
+    <div class="container">
+        <header>
+            <div class="header-content">
+                <div class="logo">🚀 AirShare <span class="clone-badge">Clone</span></div>
+                <button id="themeToggle" class="icon-button theme-toggle" title="Toggle Theme">
+                    <svg class="sun-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <use href="icons.svg#icon-sun"></use>
+                    </svg>
+                    <svg class="moon-icon hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                        stroke-width="2">
+                        <use href="icons.svg#icon-moon"></use>
+                    </svg>
+                </button>
+            </div>
+            <p class="subtitle">Peer-to-peer file transfers in your browser.</p>
+        </header>
+
+        <main>
+            <div class="drop-zone" id="dropZone">
+                <div class="drop-zone__content">
+                    <svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <use href="icons.svg#icon-upload"></use>
+                    </svg>
+                    <span class="drop-zone__title">Drop a file here</span>
+                    <span class="drop-zone__subtitle">or click to select</span>
+                </div>
+                <input type="file" id="fileInput" class="drop-zone__input" hidden>
+            </div>
+
+            <div id="linkSection" class="card hidden">
+                <div class="card-header">
+                    <h3>Ready to Share</h3>
+                    <span class="status-badge">Waiting for peer...</span>
+                </div>
+                <div class="link-container">
+                    <input type="text" id="shareLinkInput" readonly>
+                    <button id="copyButton" class="icon-button" title="Copy Link">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <use href="icons.svg#icon-copy"></use>
+                        </svg>
+                    </button>
+                </div>
+                <div id="qrcode" class="qrcode-container"></div>
+            </div>
+
+            <div id="transferSection" class="card hidden">
+                <div class="file-info">
+                    <div class="file-icon">📄</div>
+                    <div class="file-details">
+                        <p id="fileName" class="file-name">example.txt</p>
+                        <p id="fileSize" class="file-size">0 KB</p>
+                    </div>
+                </div>
+                <div class="progress-container">
+                    <div id="progressBar" class="progress-bar"></div>
+                </div>
+                <p id="transferStatus" class="transfer-status">Transferring...</p>
+            </div>
+
+            <div id="downloadSection" class="card hidden">
+                <div class="success-icon">🎉</div>
+                <h3>File Received!</h3>
+                <button id="downloadButton" class="primary-button">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="btn-icon">
+                        <use href="icons.svg#icon-download"></use>
+                    </svg>
+                    Download File
+                </button>
+            </div>
+        </main>
+
+        <footer>
+            <p> <a href="https://github.com/airshare">AirShare</a></p>
+            <div class="footer-links">
+                <a href="#" id="donateLink" target="_blank" class="footer-link hidden">Donate</a>
+                <span class="separator hidden">•</span>
+                <a href="#" id="termsLink" target="_blank" class="footer-link hidden">Terms of Use</a>
+            </div>
+        </footer>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <script type="module" src="js/app.js"></script>
+</body>
+
+</html>
