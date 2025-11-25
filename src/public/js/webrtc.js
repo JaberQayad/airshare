@@ -67,9 +67,9 @@ export class WebRTCManager {
         this.dataChannel.send(JSON.stringify(metadata));
 
         // Send file in chunks
-        const chunkSize = 16384; // 16KB
+        const chunkSize = this.config.chunkSize || 16384; // Default 16KB
         let offset = 0;
-        const MAX_BUFFERED_AMOUNT = 65536; // 64KB
+        const MAX_BUFFERED_AMOUNT = this.config.maxBufferedAmount || 65536; // Default 64KB
         let lastLogTime = 0;
 
         while (offset < file.size) {

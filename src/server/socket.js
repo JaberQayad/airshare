@@ -3,6 +3,10 @@ module.exports = (io) => {
         console.log('User connected:', socket.id);
 
         socket.on('join-room', (roomId) => {
+            if (!roomId || typeof roomId !== 'string' || !/^[a-zA-Z0-9]+$/.test(roomId)) {
+                socket.emit('error', 'Invalid room ID');
+                return;
+            }
             const rooms = io.sockets.adapter.rooms;
             const room = rooms.get(roomId);
 
@@ -16,6 +20,10 @@ module.exports = (io) => {
         });
 
         socket.on('create-room', (roomId) => {
+            if (!roomId || typeof roomId !== 'string' || !/^[a-zA-Z0-9]+$/.test(roomId)) {
+                socket.emit('error', 'Invalid room ID');
+                return;
+            }
             socket.join(roomId);
             console.log(`Room created: ${roomId} by ${socket.id}`);
         });
