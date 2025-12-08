@@ -9,7 +9,8 @@ const config = {
     appTitle: process.env.APP_TITLE || 'AirShare',
     themeColor: process.env.THEME_COLOR || '#6366f1',
     donateUrl: process.env.DONATE_URL,
-    termsUrl: process.env.TERMS_URL
+    termsUrl: process.env.TERMS_URL,
+    umamiId: process.env.UMAMI_ID
 };
 
 module.exports = config;
