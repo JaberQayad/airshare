@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: airshare
+    env: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: MAX_FILE_SIZE
+        sync: false
+      - key: ICE_SERVERS
+        sync: false
+      - key: APP_TITLE
+        value: "AirShare"
+      - key: THEME_COLOR
+        value: "#6366f1"
