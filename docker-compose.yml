@@ -2,8 +2,7 @@ version: '3.8'
 
 services:
   airshare:
-    image: ${DOCKER_IMAGE_NAME:-airshare:latest}
-    build: .
+    image: jaybel/airshare:latest
     ports:
       - "4111:3000"
     environment:
