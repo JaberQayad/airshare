@@ -1,9 +1,23 @@
-require('dotenv').config();
+// Robust parsing for ICE_SERVERS
+let iceServers;
+const iceServersEnv = process.env.ICE_SERVERS;
+
+if (iceServersEnv) {
+    try {
+        iceServers = JSON.parse(iceServersEnv);
+    } catch (e) {
+        // Fallback: treat as comma-separated URLs if not valid JSON
+        iceServers = iceServersEnv.split(',').map(url => ({ urls: url.trim() }));
+    }
+} else {
+    // Default fallback
+    iceServers = JSON.parse('[{"urls":"stun:stun.l.google.com:19302"}]');
+}
 
 const config = {
     port: process.env.PORT || 3000,
     maxFileSize: parseInt(process.env.MAX_FILE_SIZE) || 2147483648, // Default 2GB
-    iceServers: JSON.parse(process.env.ICE_SERVERS || '[{"urls":"stun:stun.l.google.com:19302"}]'),
+    iceServers: iceServers,
     chunkSize: parseInt(process.env.CHUNK_SIZE) || 16384, // 16KB
     maxBufferedAmount: parseInt(process.env.MAX_BUFFERED_AMOUNT) || 65536, // 64KB
     appTitle: process.env.APP_TITLE || 'AirShare',
