@@ -38,6 +38,8 @@ Peer-to-peer file transfers in your browser. A modern, clean implementation insp
 
 You can also run AirShare using Docker.
 
+#### Run with Docker Compose
+
 1. Build and start the container:
    ```bash
    docker-compose up --build
