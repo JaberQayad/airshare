@@ -9,8 +9,7 @@ on:
     branches: ["main", "master"]
 
 env:
-  REGISTRY: docker.io
-  # If you want Docker Hub repo to match GitHub repo: owner/repo
+  REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:

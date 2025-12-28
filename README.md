@@ -42,8 +42,9 @@ You can also run AirShare using Docker.
 
 1. Build and start the container:
    ```bash
-   docker-compose up --build
+  sudo docker run -d -p 4111:3000 --name airshare jaybel/airshare:latest
    ```
+
 
 2. Open your browser and visit `http://localhost:4111`.
 
