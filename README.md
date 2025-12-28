@@ -1,59 +1,93 @@
-# 🚀 AirShare
+<div align="center">
+  <img src="img/banner.png" alt="AirShare Banner" width="100%">
+  
+  # 🚀 AirShare
+  
+  ### Peer-to-peer file transfers in your browser.
+  *A modern, clean, and secure implementation inspired by FilePizza.*
 
-Peer-to-peer file transfers in your browser. A modern, clean implementation inspired by FilePizza.
+  [![Docker Publish](https://github.com/JaberQayad/airshare/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/JaberQayad/airshare/actions/workflows/docker-publish.yml)
+  [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
+</div>
 
-
+---
 
 ## ✨ Features
 
-- **Peer-to-Peer**: Files are transferred directly between devices using WebRTC. We never store your files.
-- **No Size Limits**: Transfer files of any size (dependent on browser capabilities).
-- **Secure**: Data is encrypted in transit.
-- **Easy to Use**: Just drag and drop, share the link, and download.
-- **Dark Mode**: Built-in dark mode support.
+- **🛡️ Peer-to-Peer**: Files are transferred directly between devices using WebRTC. We never store your files.
+- **♾️ No Size Limits**: Transfer files of any size (limited only by your browser).
+- **🔒 Secure**: End-to-end encryption in transit.
+- **⚡ Fast & Simple**: Drag and drop, share the link, and you're done.
+- **🌙 Dark Mode**: Premium UI with native dark mode support.
+- **� Docker Ready**: Optimized for containerized deployments.
 
-## 🛠️ Installation & Usage
+---
 
-### Local Development
+## 🚀 Quick Start with Docker (Recommended)
 
-1. Navigate to the project directory:
-   ```bash
-   cd airshare
-   ```
+Run the application instantly using GitHub Container Registry:
 
-2. Install dependencies:
-   ```bash
-   npm install
-   ```
+```bash
+docker run -d \
+  -p 4111:3000 \
+  --name airshare \
+  --restart unless-stopped \
+  ghcr.io/jaberqayad/airshare:latest
+```
 
-3. Start the server:
-   ```bash
-   npm start
-   ```
+Open your browser and visit: `http://localhost:4111`
 
-4. Open your browser and visit `http://localhost:3000`.
+---
 
-### 🐳 Docker
+## �️ Local Development
 
-You can also run AirShare using Docker.
+### 1. Clone & Install
+```bash
+git clone https://github.com/JaberQayad/airshare.git
+cd airshare
+npm install
+```
 
-#### Run with Docker Compose
+### 2. Configure
+Copy the example environment file and adjust as needed:
+```bash
+cp .env.example .env
+```
 
-1. Build and start the container:
-   ```bash
-  sudo docker run -d -p 4111:3000 --name airshare ghcr.io/jaberqayad/airshare:latest
-   ```
+### 3. Run
+```bash
+npm start
+```
+Visit: `http://localhost:3000`
 
+---
 
-2. Open your browser and visit `http://localhost:4111`.
+## 🐳 Docker Compose
+
+For more complex setups, use the included `docker-compose.yml`:
+
+```bash
+docker-compose up -d
+```
+
+---
 
 ## 🏗️ Technologies
 
 - **Frontend**: HTML5, CSS3, Vanilla JavaScript (ES Modules)
 - **Backend**: Node.js, Express
-- **Real-time Communication**: Socket.io (Signaling), WebRTC (Data Transfer)
+- **Real-time**: Socket.io (Signaling), WebRTC (Data Transfer)
+- **CI/CD**: GitHub Actions, GHCR.io
+
+---
 
 ## 📝 License
 
-[MIT](LICENSE)
+Distributed under the MIT License. See `LICENSE` for more information.
+
+---
+
+<div align="center">
+  Built with ❤️ for a faster, safer web.
+</div>
