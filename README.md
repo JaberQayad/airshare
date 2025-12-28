@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="img/banner.png" alt="AirShare Banner" width="100%">
+  <img src="img/banner.png" alt="AirShare Banner" width="50%">
   
   # 🚀 AirShare
   
