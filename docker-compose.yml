@@ -3,7 +3,6 @@ version: '3.8'
 services:
   airshare:
     image: ${DOCKER_IMAGE_NAME:-airshare:latest}
-    init: true
     build: .
     ports:
       - "4111:3000"
