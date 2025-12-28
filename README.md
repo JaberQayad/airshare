@@ -42,7 +42,7 @@ You can also run AirShare using Docker.
 
 1. Build and start the container:
    ```bash
-  sudo docker run -d -p 4111:3000 --name airshare jaybel/airshare:latest
+  sudo docker run -d -p 4111:3000 --name airshare ghcr.io/jaberqayad/airshare:latest
    ```
 
 
