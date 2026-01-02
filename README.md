@@ -6,7 +6,7 @@
   ### Peer-to-peer file transfers in your browser.
   *A modern, clean, and secure implementation inspired by FilePizza.*
 
-  [![Docker Publish](https://github.com/JaberQayad/airshare/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/JaberQayad/airshare/actions/workflows/docker-publish.yml)
+  [![Docker Publish](https://github.com/jaberio/airshare/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/jaberio/airshare/actions/workflows/docker-publish.yml)
   [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 </div>
@@ -33,7 +33,7 @@ docker run -d \
   -p 4111:3000 \
   --name airshare \
   --restart unless-stopped \
-  ghcr.io/jaberqayad/airshare:latest
+  ghcr.io/jaberio/airshare:latest
 ```
 
 Open your browser and visit: `http://localhost:4111`
@@ -44,7 +44,7 @@ Open your browser and visit: `http://localhost:4111`
 
 ### 1. Clone & Install
 ```bash
-git clone https://github.com/JaberQayad/airshare.git
+git clone https://github.com/jaberio/airshare.git
 cd airshare
 npm install
 ```

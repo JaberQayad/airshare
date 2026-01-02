@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   airshare:
-    image: ghcr.io/jaberqayad/airshare:latest
+    image: ghcr.io/jaberio/airshare:latest
     ports:
       - "4111:3000"
     environment:
