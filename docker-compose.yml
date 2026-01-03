@@ -3,6 +3,8 @@ version: '3.8'
 services:
   airshare:
     image: ghcr.io/jaberio/airshare:latest
+    container_name: airshare
+    restart: unless-stopped
     ports:
       - "4111:3000"
     environment:
@@ -11,3 +13,19 @@ services:
     volumes:
       - .:/app
       - /app/node_modules
+    healthcheck:
+      test: [ "CMD", "wget", "--spider", "-q", "http://localhost:3000" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+    networks:
+      - airshare_net
+
+networks:
+  airshare_net:
+    driver: bridge
