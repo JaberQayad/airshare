@@ -21,7 +21,7 @@
 - **🔒 Secure**: End-to-end encryption in transit.
 - **⚡ Fast & Simple**: Drag and drop, share the link, and you're done.
 - **🌙 Dark Mode**: Premium UI with native dark mode support.
-- **� Docker Ready**: Optimized for containerized deployments.
+- **🐳 Docker Ready**: Optimized for containerized deployments.
 
 ---
 
@@ -41,7 +41,7 @@ Open your browser and visit: `http://localhost:4111`
 
 ---
 
-## �️ Local Development
+## 💻 Local Development
 
 ### 1. Clone & Install
 ```bash
@@ -66,7 +66,7 @@ Visit: `http://localhost:3000`
 
 ## 🐳 Docker Compose
 
-For more complex setups, use the included `docker-compose.yml`:
+For more complex setups, use the included `docker-compose.yml`. This configuration includes production-ready defaults like restart policies, health checks, and isolated networks.
 
 ```bash
 docker-compose up -d
