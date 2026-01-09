@@ -10,6 +10,9 @@ services:
     environment:
       PORT: 3000
       NODE_ENV: production
+      # Uncomment and set TRUST_PROXY when running behind a reverse proxy (nginx, Apache, etc.)
+      # Supported values: 1 or 2 (number of trusted proxies), or true (trust all proxies)
+      # TRUST_PROXY: 1
 
     networks:
       - airshare_net

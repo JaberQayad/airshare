@@ -1,3 +1,8 @@
+/**
+ * Server configuration module
+ * Loads and validates environment variables for the AirShare application
+ */
+
 // Robust parsing for ICE_SERVERS
 let iceServers;
 const iceServersEnv = process.env.ICE_SERVERS;
@@ -14,6 +19,20 @@ if (iceServersEnv) {
     iceServers = JSON.parse('[{"urls":"stun:stun.l.google.com:19302"}]');
 }
 
+// Parse TRUST_PROXY environment variable
+let trustProxy = null;
+if (process.env.TRUST_PROXY) {
+    const trustProxyValue = process.env.TRUST_PROXY.toLowerCase();
+    if (trustProxyValue === 'true') {
+        trustProxy = true;
+    } else {
+        const num = parseInt(process.env.TRUST_PROXY, 10);
+        if (!isNaN(num) && (num === 1 || num === 2)) {
+            trustProxy = num;
+        }
+    }
+}
+
 const config = {
     port: process.env.PORT || 3000,
     maxFileSize: parseInt(process.env.MAX_FILE_SIZE) || 2147483648, // Default 2GB
@@ -24,7 +43,8 @@ const config = {
     themeColor: process.env.THEME_COLOR || '#6366f1',
     donateUrl: process.env.DONATE_URL,
     termsUrl: process.env.TERMS_URL,
-    umamiId: process.env.UMAMI_ID
+    umamiId: process.env.UMAMI_ID,
+    trustProxy: trustProxy
 };
 
 module.exports = config;

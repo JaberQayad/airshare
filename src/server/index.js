@@ -30,6 +30,12 @@ app.use(helmet({
 }));
 app.use(cors());
 
+// Trust Proxy Configuration
+// This enables correct client IP detection when running behind a reverse proxy (nginx, Apache, etc.)
+if (config.trustProxy !== null) {
+    app.set('trust proxy', config.trustProxy);
+}
+
 // Rate Limiting
 const limiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes

@@ -74,6 +74,50 @@ docker-compose up -d
 
 ---
 
+## 🔧 Environment Variables
+
+### General Configuration
+- `PORT` - Server port (default: `3000`)
+- `NODE_ENV` - Node environment (default: `development`)
+
+### Reverse Proxy Support
+- `TRUST_PROXY` - Enable trust proxy for correct client IP detection when running behind a reverse proxy (nginx, Apache, etc.)
+  - **Not set** (default): Trust proxy disabled - safe for direct deployments
+  - `1` - Trust 1 proxy hop
+  - `2` - Trust 2 proxy hops
+  - `true` - Trust all proxies (use with caution in controlled environments)
+
+**When to use**: Set `TRUST_PROXY` when your application is behind a reverse proxy to properly handle rate limiting and client IP detection. This resolves `ERR_ERL_UNEXPECTED_X_FORWARDED_FOR` errors.
+
+Example with Docker:
+```bash
+docker run -d \
+  -p 4111:3000 \
+  -e TRUST_PROXY=1 \
+  --name airshare \
+  --restart unless-stopped \
+  ghcr.io/jaberio/airshare:v1.0.0
+```
+
+Example with Docker Compose - uncomment in `docker-compose.yml`:
+```yaml
+environment:
+  TRUST_PROXY: 1
+```
+
+### Advanced Configuration
+- `MAX_FILE_SIZE` - Maximum file size in bytes (default: `2147483648` - 2GB)
+- `CHUNK_SIZE` - WebRTC chunk size in bytes (default: `16384` - 16KB)
+- `MAX_BUFFERED_AMOUNT` - Maximum buffered data (default: `65536` - 64KB)
+- `ICE_SERVERS` - Custom STUN/TURN servers as JSON (default: `[{"urls":"stun:stun.l.google.com:19302"}]`)
+- `APP_TITLE` - Browser tab title (default: `AirShare`)
+- `THEME_COLOR` - UI theme color as hex (default: `#6366f1`)
+- `DONATE_URL` - Custom donate link
+- `TERMS_URL` - Custom terms page link
+- `UMAMI_ID` - Analytics tracking ID
+
+---
+
 ## 🏗️ Technologies
 
 - **Frontend**: HTML5, CSS3, Vanilla JavaScript (ES Modules)
