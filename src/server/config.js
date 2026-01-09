@@ -20,10 +20,13 @@ if (iceServersEnv) {
 }
 
 // Parse TRUST_PROXY environment variable
-let trustProxy = null;
+// Default to true if running in Docker or behind a proxy
+let trustProxy = true;
 if (process.env.TRUST_PROXY) {
     const trustProxyValue = process.env.TRUST_PROXY.toLowerCase();
-    if (trustProxyValue === 'true') {
+    if (trustProxyValue === 'false') {
+        trustProxy = false;
+    } else if (trustProxyValue === 'true') {
         trustProxy = true;
     } else {
         const num = parseInt(process.env.TRUST_PROXY, 10);
