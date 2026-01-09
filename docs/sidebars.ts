@@ -16,6 +16,7 @@ const sidebars: SidebarsConfig = {
   // Documentation sidebar with organized structure
   tutorialSidebar: [
     {
+      type: 'category',
       label: 'Getting Started',
       items: [
         'intro',
@@ -23,12 +24,14 @@ const sidebars: SidebarsConfig = {
       ],
     },
     {
+      type: 'category',
       label: 'Setup & Configuration',
       items: [
         'configuration',
       ],
     },
     {
+      type: 'category',
       label: 'Development',
       items: [
         'development',
