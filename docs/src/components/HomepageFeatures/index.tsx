@@ -11,32 +11,29 @@ type FeatureItem = {
 
 const FeatureList: FeatureItem[] = [
   {
-    title: 'Easy to Use',
+    title: '🛡️ Peer-to-Peer',
     Svg: require('@site/static/img/undraw_docusaurus_mountain.svg').default,
     description: (
       <>
-        Docusaurus was designed from the ground up to be easily installed and
-        used to get your website up and running quickly.
+        Files are transferred directly between devices using WebRTC. We never store your files on servers.
       </>
     ),
   },
   {
-    title: 'Focus on What Matters',
+    title: '🔒 Secure & Private',
     Svg: require('@site/static/img/undraw_docusaurus_tree.svg').default,
     description: (
       <>
-        Docusaurus lets you focus on your docs, and we&apos;ll do the chores. Go
-        ahead and move your docs into the <code>docs</code> directory.
+        End-to-end encryption in transit. Your data stays between you and the recipient - no middle man.
       </>
     ),
   },
   {
-    title: 'Powered by React',
+    title: '⚡ Fast & Simple',
     Svg: require('@site/static/img/undraw_docusaurus_react.svg').default,
     description: (
       <>
-        Extend or customize your website layout by reusing React. Docusaurus can
-        be extended while reusing the same header and footer.
+        Drag and drop interface with instant link sharing. No authentication, no complexity - just file transfer.
       </>
     ),
   },
