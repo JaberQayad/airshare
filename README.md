@@ -34,7 +34,7 @@ docker run -d \
   -p 4111:3000 \
   --name airshare \
   --restart unless-stopped \
-  ghcr.io/jaberio/airshare:latest
+  ghcr.io/jaberio/airshare:v1.0.0
 ```
 
 Open your browser and visit: `http://localhost:4111`
