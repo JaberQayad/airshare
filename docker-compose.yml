@@ -2,7 +2,7 @@ version: "3.8"
 
 services:
   airshare:
-    image: ghcr.io/jaberio/airshare:latest
+    image: ghcr.io/jaberio/airshare:v1.0.0
     container_name: airshare
     restart: unless-stopped
     ports:
@@ -10,11 +10,14 @@ services:
     environment:
       PORT: 3000
       NODE_ENV: production
+
     healthcheck:
-      test: [ "CMD", "wget", "--spider", "-q", "http://localhost:3000/" ]
-      interval: 30s
-      timeout: 10s
+      test: [ "CMD-SHELL", "curl -fsS http://127.0.0.1:3000/health || exit 1" ]
+      interval: 15s
+      timeout: 2s
       retries: 3
+      start_period: 20s
+
     networks:
       - airshare_net
 
