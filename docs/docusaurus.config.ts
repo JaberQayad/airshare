@@ -73,6 +73,7 @@ const config: Config = {
     image: 'img/favicon.svg',
     colorMode: {
       respectPrefersColorScheme: true,
+      defaultMode: 'light',
     },
     navbar: {
       title: 'AirShare',
