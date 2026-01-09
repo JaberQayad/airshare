@@ -14,6 +14,14 @@
 
 ---
 
+## 🎬 Demo
+
+<div align="center">
+  <img src="img/demo.gif" alt="AirShare Demo" width="80%">
+</div>
+
+---
+
 ## ✨ Features
 
 - **🛡️ Peer-to-Peer**: Files are transferred directly between devices using WebRTC. We never store your files.
@@ -104,17 +112,6 @@ Example with Docker Compose - uncomment in `docker-compose.yml`:
 environment:
   TRUST_PROXY: 1
 ```
-
-### Advanced Configuration
-- `MAX_FILE_SIZE` - Maximum file size in bytes (default: `2147483648` - 2GB)
-- `CHUNK_SIZE` - WebRTC chunk size in bytes (default: `16384` - 16KB)
-- `MAX_BUFFERED_AMOUNT` - Maximum buffered data (default: `65536` - 64KB)
-- `ICE_SERVERS` - Custom STUN/TURN servers as JSON (default: `[{"urls":"stun:stun.l.google.com:19302"}]`)
-- `APP_TITLE` - Browser tab title (default: `AirShare`)
-- `THEME_COLOR` - UI theme color as hex (default: `#6366f1`)
-- `DONATE_URL` - Custom donate link
-- `TERMS_URL` - Custom terms page link
-- `UMAMI_ID` - Analytics tracking ID
 
 ---
 
