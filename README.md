@@ -1,7 +1,4 @@
-<div align="center">
-  <img src="img/banner.png" alt="AirShare Banner" width="50%">
-  
-  # 🚀 AirShare
+# 🚀 AirShare
   
   ### Peer-to-peer file transfers in your browser.
   *A modern, clean, and secure implementation inspired by FilePizza.*
@@ -9,8 +6,6 @@
   [![Docker Publish](https://github.com/jaberio/airshare/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/jaberio/airshare/actions/workflows/docker-publish.yml)
   [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
   [![Buy Me A Coffee](https://img.shields.io/badge/Buy_Me_A_Coffee-FFDD00?style=flat&logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/Jay_me)
-
-</div>
 
 ---
 
