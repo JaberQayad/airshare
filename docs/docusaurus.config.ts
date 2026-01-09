@@ -7,7 +7,7 @@ import type * as Preset from '@docusaurus/preset-classic';
 const config: Config = {
   title: 'AirShare',
   tagline: 'Peer-to-peer file transfers in your browser',
-  favicon: 'img/favicon.ico',
+  favicon: 'img/favicon.svg',
 
   // Future flags, see https://docusaurus.io/docs/api/docusaurus-config#future
   future: {
@@ -76,9 +76,12 @@ const config: Config = {
     },
     navbar: {
       title: 'AirShare',
+      hideOnScroll: true,
       logo: {
         alt: 'AirShare Logo',
-        src: 'img/banner.png',
+        src: 'img/favicon.svg',
+        width: 32,
+        height: 32,
       },
       items: [
         {
@@ -87,7 +90,6 @@ const config: Config = {
           position: 'left',
           label: 'Docs',
         },
-        {to: '/blog', label: 'Blog', position: 'left'},
         {
           href: 'https://github.com/jaberio/airshare',
           label: 'GitHub',
@@ -96,13 +98,13 @@ const config: Config = {
       ],
     },
     footer: {
-      style: 'dark',
+      style: 'light',
       links: [
         {
-          title: 'Documentation',
+          title: 'Docs',
           items: [
             {
-              label: 'Getting Started',
+              label: 'Introduction',
               to: '/docs/intro',
             },
             {
@@ -112,6 +114,10 @@ const config: Config = {
             {
               label: 'Configuration',
               to: '/docs/configuration',
+            },
+            {
+              label: 'Development',
+              to: '/docs/development',
             },
           ],
         },
@@ -132,17 +138,17 @@ const config: Config = {
           title: 'More',
           items: [
             {
-              label: 'Blog',
-              to: '/blog',
-            },
-            {
               label: 'GitHub Repository',
               href: 'https://github.com/jaberio/airshare',
+            },
+            {
+              label: 'Buy Me a Coffee',
+              href: 'https://buymeacoffee.com/Jay_me',
             },
           ],
         },
       ],
-      copyright: `Copyright © ${new Date().getFullYear()} AirShare. Built with Docusaurus.`,
+      copyright: `Copyright © ${new Date().getFullYear()} AirShare. All rights reserved.`,
     },
     prism: {
       theme: prismThemes.github,
