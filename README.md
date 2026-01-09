@@ -49,7 +49,18 @@ Open your browser and visit: `http://localhost:4111`
 
 ---
 
-## 💻 Local Development
+## � Documentation
+
+Full documentation is available at: **[https://jaberio.github.io/airshare/](https://jaberio.github.io/airshare/)**
+
+- [Getting Started](https://jaberio.github.io/airshare/docs/intro)
+- [Installation Guide](https://jaberio.github.io/airshare/docs/installation)
+- [Configuration Options](https://jaberio.github.io/airshare/docs/configuration)
+- [Development Guide](https://jaberio.github.io/airshare/docs/development)
+
+---
+
+## �💻 Local Development
 
 ### 1. Clone & Install
 ```bash
