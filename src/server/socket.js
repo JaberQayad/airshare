@@ -2,10 +2,11 @@ const logger = require('./logger');
 
 module.exports = (io) => {
     io.on('connection', (socket) => {
-        logger.info('User connected:', { id: socket.id });
+        // Connection logging removed to reduce console noise
 
         socket.on('join-room', (roomId) => {
             if (!roomId || typeof roomId !== 'string' || !/^[a-zA-Z0-9]+$/.test(roomId)) {
+                logger.error('Invalid room ID received', { roomId });
                 socket.emit('error', 'Invalid room ID');
                 return;
             }
@@ -23,11 +24,11 @@ module.exports = (io) => {
 
         socket.on('create-room', (roomId) => {
             if (!roomId || typeof roomId !== 'string' || !/^[a-zA-Z0-9]+$/.test(roomId)) {
+                logger.error('Invalid room ID received', { roomId });
                 socket.emit('error', 'Invalid room ID');
                 return;
             }
             socket.join(roomId);
-            logger.info(`Room created: ${roomId} by ${socket.id}`);
         });
 
         socket.on('offer', (data) => {
@@ -43,7 +44,7 @@ module.exports = (io) => {
         });
 
         socket.on('disconnect', () => {
-            logger.info('User disconnected:', { id: socket.id });
+            // Disconnection logging removed to reduce console noise
         });
     });
 };
