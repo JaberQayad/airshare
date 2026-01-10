@@ -269,20 +269,22 @@ export class WebRTCManager {
         }
 
         const file = this.sendState.file;
-        const highWater = 262144; // 256KB - much lower threshold
-        const lowWater = 65536; // 64KB - resume only when very low
+        const highWater = 1048576; // 1MB - pause if this high
+        const targetBuffer = 524288; // 512KB - aim for this
         
+        // Dynamic batch size: start at 1, increase based on actual buffer levels
+        let currentBatchSize = this.sendState.batchSize || 1;
+        let yieldTimeMs = this.sendState.yieldTimeMs || 50;
         let chunksSentThisBatch = 0;
-        const maxChunksPerBatch = 1; // Send only 1 chunk at a time
 
         while (this.sendState.offset < file.size) {
-            // CRITICAL: Check buffer BEFORE reading/sending
-            const bufferedKB = (this.dataChannel.bufferedAmount / 1024).toFixed(1);
+            const bufferedKB = this.dataChannel.bufferedAmount / 1024;
             
+            // CRITICAL: Hard pause if buffer is dangerously full
             if (this.dataChannel.bufferedAmount > highWater) {
-                console.log(`[BACKPRESSURE] Buffer full: ${bufferedKB}KB > 256KB threshold. Pausing at offset ${this.sendState.offset}`);
+                console.log(`[BACKPRESSURE] 🛑 CRITICAL: Buffer ${bufferedKB.toFixed(1)}KB > 1MB! Pausing immediately.`);
                 this.sendState.paused = true;
-                return; // MUST pause here
+                return;
             }
 
             const end = Math.min(this.sendState.offset + this.sendState.currentChunkSize, file.size);
@@ -299,10 +301,8 @@ export class WebRTCManager {
                 break;
             }
 
-            // Compute CRC32 for integrity
+            // Compute CRC32
             const crc32 = calculateCRC32(buffer);
-            
-            // Prepare: [4-byte crc32][chunk data]
             const chunkWithCrc = new Uint8Array(buffer.byteLength + 4);
             new DataView(chunkWithCrc.buffer).setUint32(0, crc32, true);
             chunkWithCrc.set(new Uint8Array(buffer), 4);
@@ -310,14 +310,12 @@ export class WebRTCManager {
             // Send
             try {
                 if (this.dataChannel.readyState !== 'open') {
-                    console.log('[SEND] Channel closed, stopping at offset:', this.sendState.offset);
+                    console.log('[SEND] Channel closed at offset:', this.sendState.offset);
                     break;
                 }
-                
                 this.dataChannel.send(chunkWithCrc.buffer);
-                console.log(`[SEND] Sent chunk ${Math.floor(this.sendState.offset / this.sendState.currentChunkSize)}: ${chunkSize} bytes, buffer: ${bufferedKB}KB`);
             } catch (e) {
-                console.error('[SEND] Failed to send chunk:', e.message);
+                console.error('[SEND] Send failed:', e.message);
                 this.ui.showError(`Send failed: ${e.message}`);
                 break;
             }
@@ -325,17 +323,39 @@ export class WebRTCManager {
             this.sendState.offset += buffer.byteLength;
             this.updateProgressStats(this.sendState.offset, file.size, true);
 
-            // After sending 1 chunk, yield and check buffer again
+            // Dynamic batch processing
             chunksSentThisBatch++;
-            if (chunksSentThisBatch >= maxChunksPerBatch) {
+            
+            if (chunksSentThisBatch >= currentBatchSize) {
                 chunksSentThisBatch = 0;
-                // Long yield to let receiver catch up
-                await new Promise(resolve => setTimeout(resolve, 100));
+                
+                // Analyze buffer and adapt
+                if (this.dataChannel.bufferedAmount < 128000) { // Buffer very low (< 128KB)
+                    // We can send faster - increase batch size
+                    if (currentBatchSize < 20) {
+                        currentBatchSize = Math.min(20, currentBatchSize + 2);
+                        yieldTimeMs = Math.max(10, yieldTimeMs - 5);
+                        console.log(`[ADAPT] ⚡ Buffer low, speeding up: batch=${currentBatchSize}, yield=${yieldTimeMs}ms`);
+                    }
+                } else if (this.dataChannel.bufferedAmount > targetBuffer) {
+                    // Buffer getting full - slow down
+                    if (currentBatchSize > 1) {
+                        currentBatchSize = Math.max(1, Math.floor(currentBatchSize * 0.7));
+                        yieldTimeMs = Math.min(200, yieldTimeMs + 20);
+                        console.log(`[ADAPT] 🐌 Buffer rising (${bufferedKB.toFixed(1)}KB), slowing: batch=${currentBatchSize}, yield=${yieldTimeMs}ms`);
+                    }
+                }
+                
+                // Yield
+                await new Promise(resolve => setTimeout(resolve, yieldTimeMs));
             }
         }
 
         if (this.sendState.offset >= file.size) {
-            console.log('[SEND] ✓ Transfer complete: all', this.sendState.offset, 'bytes sent');
+            console.log('[SEND] ✓ Complete! Sent', this.sendState.offset, 'bytes');
+            // Store settings for next transfer
+            this.sendState.batchSize = currentBatchSize;
+            this.sendState.yieldTimeMs = yieldTimeMs;
             this.ui.updateProgress(100, 'Transfer Complete!');
         }
     }
