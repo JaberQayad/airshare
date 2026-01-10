@@ -62,17 +62,31 @@ export class WebRTCManager {
         };
 
         this.peerConnection.onconnectionstatechange = () => {
+            console.log('Connection state:', this.peerConnection.connectionState);
             if (this.peerConnection.connectionState === 'connected') {
                 this.ui.updateStatus('Connected');
                 this.stats.startTime = Date.now();
+            } else if (this.peerConnection.connectionState === 'failed' || this.peerConnection.connectionState === 'disconnected') {
+                this.ui.showError(`Connection ${this.peerConnection.connectionState}`);
             }
         };
 
+        this.peerConnection.oniceconnectionstatechange = () => {
+            console.log('ICE connection state:', this.peerConnection.iceConnectionState);
+        };
+
+        this.peerConnection.onicegatheringstatechange = () => {
+            console.log('ICE gathering state:', this.peerConnection.iceGatheringState);
+        };
+
         if (isInitiator) {
-            this.dataChannel = this.peerConnection.createDataChannel('fileTransfer');
+            this.dataChannel = this.peerConnection.createDataChannel('fileTransfer', {
+                ordered: true  // Ensure chunks arrive in order
+            });
             this.setupDataChannel(this.dataChannel, fileToSend);
         } else {
             this.peerConnection.ondatachannel = (event) => {
+                console.log('Data channel received from sender');
                 this.dataChannel = event.channel;
                 this.setupDataChannel(this.dataChannel);
             };
@@ -109,11 +123,16 @@ export class WebRTCManager {
         };
 
         channel.onclose = () => {
+            console.log('Data channel closed');
             this.ui.updateStatus('Connection closed');
         };
 
         channel.onerror = (error) => {
-            this.ui.showError(`Data channel error: ${error.message || 'Unknown error'}`);
+            console.error('Data channel error event:', error);
+            console.error('Channel state:', channel.readyState);
+            console.error('Channel buffered amount:', channel.bufferedAmount);
+            const errorMsg = error && error.message ? error.message : 'Unknown error';
+            this.ui.showError(`Data channel error: ${errorMsg}. State: ${channel.readyState}`);
         };
     }
 
@@ -443,25 +462,37 @@ export class WebRTCManager {
     }
 
     async handleSignal(type, data) {
-        if (!this.peerConnection) return;
+        if (!this.peerConnection) {
+            console.warn('No peer connection when handling signal:', type);
+            return;
+        }
 
-        switch (type) {
-            case 'offer':
-                await this.peerConnection.setRemoteDescription(new RTCSessionDescription(data.offer));
-                const answer = await this.peerConnection.createAnswer();
-                await this.peerConnection.setLocalDescription(answer);
-                this.socket.emit('answer', { answer, roomId: this.roomId });
-                break;
-            case 'answer':
-                await this.peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer));
-                break;
-            case 'candidate':
-                try {
-                    await this.peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
-                } catch (e) {
-                    // Silently fail on invalid candidates
-                }
-                break;
+        try {
+            switch (type) {
+                case 'offer':
+                    console.log('Handling offer');
+                    await this.peerConnection.setRemoteDescription(new RTCSessionDescription(data.offer));
+                    const answer = await this.peerConnection.createAnswer();
+                    await this.peerConnection.setLocalDescription(answer);
+                    this.socket.emit('answer', { answer, roomId: this.roomId });
+                    break;
+                case 'answer':
+                    console.log('Handling answer');
+                    await this.peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer));
+                    break;
+                case 'candidate':
+                    if (data.candidate) {
+                        try {
+                            await this.peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
+                        } catch (e) {
+                            console.warn('Failed to add ICE candidate:', e.message);
+                        }
+                    }
+                    break;
+            }
+        } catch (e) {
+            console.error('Signal handling error:', type, e);
+            this.ui.showError(`Signal error (${type}): ${e.message}`);
         }
     }
 
