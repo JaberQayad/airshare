@@ -55,7 +55,12 @@ function initializeApp() {
     });
 
     socket.on('peer-joined', (data) => {
-        ui.updateStatus('Peer joined! Send when ready...');
+        const isSender = webrtcManager.isInitiator;
+        if (isSender) {
+            ui.updateStatus('Peer joined! Send when ready...');
+        } else {
+            ui.updateStatus('Peer joined! Receiving...');
+        }
         // Connection prompt for sender
         ui.showConnectionPrompt(
             data.peerId,

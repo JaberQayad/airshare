@@ -30,6 +30,7 @@ export class UIManager {
         this.downloadCallback = null;
         this.acceptConnectionCallback = null;
         this.errorCallback = null;
+        this.currentFile = null;
         
         this.initTheme();
         this.bindEvents();
@@ -102,7 +103,11 @@ export class UIManager {
 
     onDownloadClick(callback) {
         this.downloadCallback = callback;
-        this.elements.downloadButton.addEventListener('click', callback);
+        this.elements.downloadButton.addEventListener('click', () => {
+            if (this.currentFile) {
+                callback(this.currentFile);
+            }
+        });
     }
 
     onAcceptConnection(callback) {
@@ -113,6 +118,7 @@ export class UIManager {
         this.elements.dropZone.classList.add('hidden');
         this.elements.linkSection.classList.remove('hidden');
         this.elements.shareLinkInput.value = link;
+        this.elements.statusBadge.textContent = 'Waiting for peer...';
 
         this.elements.qrcodeElement.innerHTML = '';
         new QRCode(this.elements.qrcodeElement, {
@@ -125,9 +131,15 @@ export class UIManager {
     showReceiverUI() {
         this.elements.dropZone.classList.add('hidden');
         this.elements.linkSection.classList.remove('hidden');
-        document.querySelector('.link-container').style.display = 'none';
-        document.querySelector('.card-header h3').textContent = 'Connecting...';
-        this.elements.statusBadge.textContent = 'Connecting';
+        // Hide the link input and copy button for receiver
+        const linkContainer = document.querySelector('.link-container');
+        if (linkContainer) linkContainer.style.display = 'none';
+        // Hide QR code for receiver
+        if (this.elements.qrcodeElement) this.elements.qrcodeElement.style.display = 'none';
+        // Update header text to indicate receiver mode
+        const cardHeader = document.querySelector('.card-header h3');
+        if (cardHeader) cardHeader.textContent = 'Ready to Receive';
+        this.elements.statusBadge.textContent = 'Connecting to sender...';
     }
 
     updateStatus(text) {
@@ -147,15 +159,9 @@ export class UIManager {
     }
 
     showDownload(file) {
+        this.currentFile = file;
         this.elements.transferSection.classList.add('hidden');
         this.elements.downloadSection.classList.remove('hidden');
-        
-        // If file is provided, update button click handler for streaming save case
-        if (file) {
-            this.elements.downloadButton.onclick = () => {
-                if (this.downloadCallback) this.downloadCallback(file);
-            };
-        }
     }
 
     showError(message) {
