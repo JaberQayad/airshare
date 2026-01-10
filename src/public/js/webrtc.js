@@ -57,6 +57,7 @@ export class WebRTCManager {
 
         this.peerConnection.onicecandidate = (event) => {
             if (event.candidate) {
+                console.log('ICE candidate:', event.candidate.candidate.substring(0, 50));
                 this.socket.emit('candidate', { candidate: event.candidate, roomId });
             }
         };
@@ -66,17 +67,31 @@ export class WebRTCManager {
             if (this.peerConnection.connectionState === 'connected') {
                 this.ui.updateStatus('Connected');
                 this.stats.startTime = Date.now();
-            } else if (this.peerConnection.connectionState === 'failed' || this.peerConnection.connectionState === 'disconnected') {
-                this.ui.showError(`Connection ${this.peerConnection.connectionState}`);
+            } else if (this.peerConnection.connectionState === 'failed') {
+                console.error('Peer connection failed - ICE connection failed');
+                this.ui.showError('Connection failed: Unable to establish peer connection (firewall issue?)');
+            } else if (this.peerConnection.connectionState === 'disconnected') {
+                this.ui.showError('Connection disconnected');
             }
         };
 
         this.peerConnection.oniceconnectionstatechange = () => {
-            console.log('ICE connection state:', this.peerConnection.iceConnectionState);
+            const state = this.peerConnection.iceConnectionState;
+            console.log('ICE connection state:', state);
+            if (state === 'failed') {
+                console.error('ICE connection failed - no valid candidate pairs');
+            } else if (state === 'disconnected') {
+                console.warn('ICE connection disconnected');
+            }
         };
 
         this.peerConnection.onicegatheringstatechange = () => {
             console.log('ICE gathering state:', this.peerConnection.iceGatheringState);
+        };
+
+        this.peerConnection.onerror = (event) => {
+            console.error('Peer connection error:', event);
+            this.ui.showError('Peer connection error: ' + (event.error?.message || 'unknown'));
         };
 
         if (isInitiator) {
@@ -99,7 +114,19 @@ export class WebRTCManager {
         // Set backpressure thresholds for proper flow control
         channel.bufferedAmountLowThreshold = this.config.bufferLowWater || 262144; // 256KB
         
+        // Set a timeout to detect if channel never opens
+        const openTimeout = setTimeout(() => {
+            if (channel.readyState !== 'open') {
+                console.error('Data channel did not open within 10 seconds');
+                console.error('Current state:', channel.readyState);
+                console.error('Peer connection state:', this.peerConnection?.connectionState);
+                console.error('ICE connection state:', this.peerConnection?.iceConnectionState);
+                this.ui.showError('Data channel failed to open - connection may be blocked by firewall');
+            }
+        }, 10000);
+        
         channel.onopen = () => {
+            clearTimeout(openTimeout);
             console.log('Data channel opened, fileToSend:', fileToSend ? fileToSend.name : 'none', 'pendingFile:', this.pendingFile ? this.pendingFile.name : 'none');
             const fileToTransfer = fileToSend || this.pendingFile;
             if (fileToTransfer) {
@@ -123,14 +150,20 @@ export class WebRTCManager {
         };
 
         channel.onclose = () => {
+            clearTimeout(openTimeout);
             console.log('Data channel closed');
+            console.log('Peer connection state:', this.peerConnection?.connectionState);
+            console.log('ICE connection state:', this.peerConnection?.iceConnectionState);
             this.ui.updateStatus('Connection closed');
         };
 
         channel.onerror = (error) => {
+            clearTimeout(openTimeout);
             console.error('Data channel error event:', error);
             console.error('Channel state:', channel.readyState);
             console.error('Channel buffered amount:', channel.bufferedAmount);
+            console.error('Peer connection state:', this.peerConnection?.connectionState);
+            console.error('ICE connection state:', this.peerConnection?.iceConnectionState);
             const errorMsg = error && error.message ? error.message : 'Unknown error';
             this.ui.showError(`Data channel error: ${errorMsg}. State: ${channel.readyState}`);
         };
@@ -500,11 +533,18 @@ export class WebRTCManager {
         if (!this.peerConnection) return;
 
         this.peerConnection.createOffer()
-            .then((offer) => this.peerConnection.setLocalDescription(offer))
+            .then((offer) => {
+                console.log('Offer created successfully');
+                return this.peerConnection.setLocalDescription(offer);
+            })
             .then(() => {
+                console.log('Local description set, sending offer');
                 this.socket.emit('offer', { offer: this.peerConnection.localDescription, roomId: this.roomId });
             })
-            .catch(e => {});
+            .catch(e => {
+                console.error('Failed to create/send offer:', e);
+                this.ui.showError(`Failed to create offer: ${e.message}`);
+            });
     }
 }
 
