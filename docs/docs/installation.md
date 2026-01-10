@@ -328,7 +328,6 @@ Check that enterprise features are active:
 
 - ⚙️ [Configuration Guide](./configuration.md) - Customize for your needs
 - 🛠️ [Development Guide](./development.md) - Contribute or extend
-- 🐳 [Docker Troubleshooting](../plans/LIMITATIONS.md) - Common issues
 3. In another browser tab, open the shared link
 4. Verify the file transfer works correctly
 

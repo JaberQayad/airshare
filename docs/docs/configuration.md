@@ -330,6 +330,4 @@ BUFFER_LOW_WATER=131072             # 128KB
 
 ## See Also
 
-- 📋 [Environment Reference Guide](../plans/ENV_REFERENCE.md) - Tuning recommendations
-- 🛠️ [Development Guide](./development.md) - Modifying configuration code
-- 📊 [Architecture Decisions](../plans/ARCHITECTURE.md) - Why these defaults exist
+- �️ [Development Guide](./development.md) - Modifying configuration code

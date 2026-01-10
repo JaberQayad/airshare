@@ -131,4 +131,3 @@ npm start
 - 📖 [Installation Guide](./installation.md) - Get it running
 - ⚙️ [Configuration](./configuration.md) - Customize for your needs
 - 🛠️ [Development](./development.md) - Contribute to the project
-- 📋 [API Reference](../plans/ARCHITECTURE.md) - Deep technical details
