@@ -261,16 +261,20 @@ export class WebRTCManager {
 
     async continueSendFile() {
         if (!this.sendState.file || !this.dataChannel || this.dataChannel.readyState !== 'open') {
+            console.log('Cannot continue send: file=' + !!this.sendState.file + ', channel=' + !!this.dataChannel + ', state=' + this.dataChannel?.readyState);
             return;
         }
 
         const file = this.sendState.file;
         const highWater = this.config.bufferHighWater || 1048576; // 1MB
         const lowWater = this.config.bufferLowWater || 262144; // 256KB
+        const chunkBatchSize = 10; // Process up to 10 chunks per event loop iteration
+        let chunksThisBatch = 0;
 
         while (this.sendState.offset < file.size) {
             // Check backpressure and pause if needed
             if (this.dataChannel.bufferedAmount > highWater) {
+                console.log(`[BACKPRESSURE] Buffered: ${this.dataChannel.bufferedAmount}, pausing...`);
                 this.sendState.backpressureCount++;
                 
                 // Adaptive chunk sizing: reduce on frequent backpressure
@@ -279,24 +283,38 @@ export class WebRTCManager {
                         this.config.minChunkSize || 32768,
                         Math.floor(this.sendState.currentChunkSize * 0.8)
                     );
+                    console.log(`[BACKPRESSURE] Reducing chunk size to ${this.sendState.currentChunkSize}`);
                     this.sendState.backpressureCount = 0;
                 }
                 
                 this.sendState.paused = true;
+                console.log('[SEND] Paused, waiting for bufferedamountlow event');
                 return; // Wait for bufferedamountlow event
+            } else {
+                this.sendState.backpressureCount = 0;
             }
 
             // Adaptive: increase chunk size if connection is stable
-            if (this.sendState.backpressureCount === 0 && this.sendState.currentChunkSize < (this.config.maxChunkSize || 262144)) {
+            if (this.sendState.currentChunkSize < (this.config.maxChunkSize || 262144)) {
                 this.sendState.currentChunkSize = Math.min(
                     this.config.maxChunkSize || 262144,
-                    Math.floor(this.sendState.currentChunkSize * 1.1)
+                    Math.floor(this.sendState.currentChunkSize * 1.05)
                 );
             }
 
             const end = Math.min(this.sendState.offset + this.sendState.currentChunkSize, file.size);
-            const slice = file.slice(this.sendState.offset, end);
-            const buffer = await slice.arrayBuffer();
+            
+            // Read the file slice
+            let buffer;
+            try {
+                const slice = file.slice(this.sendState.offset, end);
+                // Use FileReader for better handling of large files
+                buffer = await this.readFileSliceAsBuffer(slice);
+            } catch (e) {
+                console.error('Failed to read file slice:', e);
+                this.ui.showError(`Read error: ${e.message}`);
+                break;
+            }
 
             // Compute CRC32 for integrity
             const crc32 = calculateCRC32(buffer);
@@ -308,33 +326,54 @@ export class WebRTCManager {
 
             try {
                 if (this.dataChannel.readyState !== 'open') {
-                    console.log('Channel closed, stopping transfer');
+                    console.log('[SEND] Channel closed during transfer, offset:', this.sendState.offset);
                     break;
                 }
                 this.dataChannel.send(chunkWithCrc.buffer);
             } catch (e) {
+                console.error('[SEND] Send error:', e.message);
                 this.ui.showError(`Send failed: ${e.message}`);
-                console.error('Send error:', e);
                 break;
             }
 
             this.sendState.offset += buffer.byteLength;
             this.updateProgressStats(this.sendState.offset, file.size, true);
 
-            // Yield to prevent blocking
-            await new Promise(resolve => setTimeout(resolve, 0));
+            // Batch processing: yield to event loop every N chunks
+            chunksThisBatch++;
+            if (chunksThisBatch >= chunkBatchSize) {
+                chunksThisBatch = 0;
+                // Yield to allow UI updates and WebRTC events to be processed
+                await new Promise(resolve => setTimeout(resolve, 10));
+            }
         }
 
         if (this.sendState.offset >= file.size) {
+            console.log('[SEND] Transfer complete:', this.sendState.offset, 'bytes sent');
             this.ui.updateProgress(100, 'Transfer Complete!');
         }
+    }
+
+    // Helper: read file slice as ArrayBuffer using FileReader (non-blocking for large files)
+    readFileSliceAsBuffer(slice) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => {
+                resolve(reader.result);
+            };
+            reader.onerror = () => {
+                reject(new Error('FileReader error'));
+            };
+            reader.readAsArrayBuffer(slice);
+        });
     }
 
     updateProgressStats(transferred, total, isSender = false) {
         const now = Date.now();
         
-        // Throttle: update at most 10x per second AND if percentage changed >=1%
-        if (now - this.stats.lastProgressUpdate < 100) {
+        // Throttle: update at most 2x per second (500ms) AND if percentage changed >=1%
+        // This prevents UI updates from blocking the send loop
+        if (now - this.stats.lastProgressUpdate < 500) {
             return;
         }
 
