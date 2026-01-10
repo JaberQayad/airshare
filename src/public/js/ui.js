@@ -116,6 +116,8 @@ export class UIManager {
 
     showLinkSection(link) {
         this.elements.dropZone.classList.add('hidden');
+        this.elements.transferSection.classList.add('hidden');
+        this.elements.downloadSection.classList.add('hidden');
         this.elements.linkSection.classList.remove('hidden');
         this.elements.shareLinkInput.value = link;
         this.elements.statusBadge.textContent = 'Waiting for peer...';
@@ -147,7 +149,9 @@ export class UIManager {
     }
 
     showTransfer(fileName, fileSize) {
+        this.elements.dropZone.classList.add('hidden');
         this.elements.linkSection.classList.add('hidden');
+        this.elements.downloadSection.classList.add('hidden');
         this.elements.transferSection.classList.remove('hidden');
         this.elements.fileNameDisplay.textContent = fileName;
         this.elements.fileSizeDisplay.textContent = formatBytes(fileSize);
@@ -160,6 +164,8 @@ export class UIManager {
 
     showDownload(file) {
         this.currentFile = file;
+        this.elements.dropZone.classList.add('hidden');
+        this.elements.linkSection.classList.add('hidden');
         this.elements.transferSection.classList.add('hidden');
         this.elements.downloadSection.classList.remove('hidden');
     }
