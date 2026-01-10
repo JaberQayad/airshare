@@ -9,6 +9,7 @@ export class WebRTCManager {
         this.receivedSize = 0;
         this.fileInfo = {};
         this.receivedFile = null;
+        this.isReceiving = false;
     }
 
     setupPeerConnection(roomId, isInitiator, fileToSend = null) {
@@ -122,21 +123,35 @@ export class WebRTCManager {
                 this.fileInfo = metadata;
                 this.receivedBuffers = [];
                 this.receivedSize = 0;
+                this.isReceiving = true;
                 this.ui.showTransfer(metadata.name, metadata.size);
                 console.log('Receiving file:', metadata.name, metadata.size);
             }
-        } else {
+        } else if (this.isReceiving) {
             this.receivedBuffers.push(data);
             this.receivedSize += data.byteLength;
             const percentage = Math.round((this.receivedSize / this.fileInfo.size) * 100);
 
             this.ui.updateProgress(percentage, `Transferring... ${percentage}%`);
 
-            if (this.receivedSize === this.fileInfo.size) {
-                const blob = new Blob(this.receivedBuffers, { type: this.fileInfo.fileType });
-                this.receivedFile = new File([blob], this.fileInfo.name, { type: this.fileInfo.fileType });
-                this.ui.showDownload();
+            // Check if file is completely received
+            if (this.receivedSize >= this.fileInfo.size) {
+                this.isReceiving = false;
+                this.completeFileReceive();
             }
+        }
+    }
+
+    completeFileReceive() {
+        try {
+            const blob = new Blob(this.receivedBuffers, { type: this.fileInfo.fileType });
+            this.receivedFile = new File([blob], this.fileInfo.name, { type: this.fileInfo.fileType });
+            this.receivedBuffers = []; // Clear buffer to free memory
+            this.ui.showDownload();
+            console.log('File received successfully');
+        } catch (e) {
+            console.error('Error completing file receive:', e);
+            this.ui.updateProgress(0, 'Transfer failed');
         }
     }
 

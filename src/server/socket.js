@@ -130,14 +130,8 @@ module.exports = (io) => {
             return;
           }
 
-          // Relay the data with backpressure handling
-          const targetSockets = io.sockets.adapter.rooms.get(roomId);
-          if (targetSockets && targetSockets.size > 0) {
-            // Use setImmediate to avoid blocking the event loop during large transfers
-            setImmediate(() => {
-              socket.to(roomId).emit(eventName, { ...data, from: socket.id });
-            });
-          }
+          // Direct relay without setImmediate - it adds unnecessary latency
+          socket.to(roomId).emit(eventName, { ...data, from: socket.id });
         } catch (err) {
           logger.error("signal_relay_failed", { socketId: socket.id, eventName, error: err.message });
           socket.emit("app-error", { message: "Signaling failed" });
