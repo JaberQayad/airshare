@@ -126,6 +126,19 @@ export class WebRTCManager {
         
         this.ui.showTransfer(file.name, file.size);
 
+        // Wait for channel to open if not already
+        if (this.dataChannel.readyState !== 'open') {
+            console.log('Waiting for data channel to open...');
+            await new Promise(resolve => {
+                const checkInterval = setInterval(() => {
+                    if (this.dataChannel.readyState === 'open') {
+                        clearInterval(checkInterval);
+                        resolve();
+                    }
+                }, 100);
+            });
+        }
+
         // Calculate metadata with integrity info
         const totalChunks = Math.ceil(file.size / this.sendState.chunkSize);
         const metadata = {
@@ -140,8 +153,13 @@ export class WebRTCManager {
         };
 
         try {
-            this.dataChannel.send(JSON.stringify(metadata));
-            await this.continueSendFile();
+            if (this.dataChannel.readyState === 'open') {
+                this.dataChannel.send(JSON.stringify(metadata));
+                console.log('Metadata sent, starting file transfer');
+                await this.continueSendFile();
+            } else {
+                throw new Error('Data channel failed to open');
+            }
         } catch (e) {
             this.ui.showError(`Failed to start transfer: ${e.message}`);
         }
@@ -195,9 +213,14 @@ export class WebRTCManager {
             chunkWithCrc.set(new Uint8Array(buffer), 4);
 
             try {
+                if (this.dataChannel.readyState !== 'open') {
+                    console.log('Channel closed, stopping transfer');
+                    break;
+                }
                 this.dataChannel.send(chunkWithCrc.buffer);
             } catch (e) {
                 this.ui.showError(`Send failed: ${e.message}`);
+                console.error('Send error:', e);
                 break;
             }
 
