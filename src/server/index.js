@@ -5,6 +5,7 @@ const path = require('path');
 const helmet = require('helmet');
 const cors = require('cors');
 const rateLimit = require('express-rate-limit');
+const { ipKeyGenerator } = require('express-rate-limit');
 const config = require('./config');
 const socketHandler = require('./socket');
 const fs = require('fs');
@@ -41,6 +42,10 @@ const limiter = rateLimit({
     max: 100, // Limit each IP to 100 requests per windowMs
     standardHeaders: true,
     legacyHeaders: false,
+    keyGenerator: (req) => {
+        // Use the library's ipKeyGenerator for proper IPv6 handling
+        return ipKeyGenerator(req);
+    },
     skip: (req) => {
         // Skip rate limiting for local requests in development
         return req.ip === '::1' || req.ip === '127.0.0.1';
