@@ -87,6 +87,22 @@
                     Download File
                 </button>
             </div>
+
+            <!-- Connection Prompt Modal -->
+            <div id="connectionPromptModal" class="modal hidden">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h3>Accept Connection?</h3>
+                    </div>
+                    <div class="modal-body">
+                        <p id="promptMessage">Peer wants to connect. Do you want to accept?</p>
+                    </div>
+                    <div class="modal-footer">
+                        <button id="rejectButton" class="secondary-button">Reject</button>
+                        <button id="acceptButton" class="primary-button">Accept</button>
+                    </div>
+                </div>
+            </div>
         </main>
 
         <footer>

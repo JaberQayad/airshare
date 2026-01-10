@@ -23,7 +23,11 @@ export class UIManager {
             donateLink: document.getElementById('donateLink'),
             termsLink: document.getElementById('termsLink'),
             separator: document.querySelector('.separator'),
-            logo: document.querySelector('.logo')
+            logo: document.querySelector('.logo'),
+            connectionPromptModal: document.getElementById('connectionPromptModal'),
+            promptMessage: document.getElementById('promptMessage'),
+            acceptButton: document.getElementById('acceptButton'),
+            rejectButton: document.getElementById('rejectButton')
         };
 
         this.fileSelectCallback = null;
@@ -181,12 +185,26 @@ export class UIManager {
     }
 
     showConnectionPrompt(peerId, onAccept, onReject) {
-        const accept = confirm(`Peer ${peerId.substring(0, 8)}... wants to connect. Accept?`);
-        if (accept && onAccept) {
-            onAccept();
-        } else if (!accept && onReject) {
-            onReject();
-        }
+        this.elements.promptMessage.textContent = `Peer ${peerId.substring(0, 8)}... wants to connect. Accept?`;
+        this.elements.connectionPromptModal.classList.remove('hidden');
+
+        // Clear previous listeners by cloning
+        const acceptBtn = this.elements.acceptButton.cloneNode(true);
+        const rejectBtn = this.elements.rejectButton.cloneNode(true);
+        this.elements.acceptButton.replaceWith(acceptBtn);
+        this.elements.rejectButton.replaceWith(rejectBtn);
+        this.elements.acceptButton = document.getElementById('acceptButton');
+        this.elements.rejectButton = document.getElementById('rejectButton');
+
+        this.elements.acceptButton.addEventListener('click', () => {
+            this.elements.connectionPromptModal.classList.add('hidden');
+            if (onAccept) onAccept();
+        });
+
+        this.elements.rejectButton.addEventListener('click', () => {
+            this.elements.connectionPromptModal.classList.add('hidden');
+            if (onReject) onReject();
+        });
     }
 
     applyConfig(config) {
