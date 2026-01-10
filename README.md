@@ -37,7 +37,7 @@ docker run -d \
   -p 4111:3000 \
   --name airshare \
   --restart unless-stopped \
-  ghcr.io/jaberio/airshare:latest
+  ghcr.io/jaberio/airshare:v1.0.0
 ```
 
 Open your browser and visit: `http://localhost:4111`
@@ -121,32 +121,7 @@ environment:
 
 ---
 
-
-### Docker Volume Mounting
-To persist logs when running in Docker:
-
-```bash
-docker run -d \
-  -p 4111:3000 \
-  -v airshare-logs:/app/logs \
-  --name airshare \
-  --restart unless-stopped \
-  ghcr.io/jaberio/airshare:latest
-```
-
-Or with Docker Compose:
-```yaml
-services:
-  airshare:
-    volumes:
-      - airshare-logs:/app/logs
-
-volumes:
-  airshare-logs:
-```
-
----
-
+## 🛠️ Tech Stack
 - **Frontend**: HTML5, CSS3, Vanilla JavaScript (ES Modules)
 - **Backend**: Node.js, Express
 - **Real-time**: Socket.io (Signaling), WebRTC (Data Transfer)
