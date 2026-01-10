@@ -37,7 +37,7 @@ docker run -d \
   -p 4111:3000 \
   --name airshare \
   --restart unless-stopped \
-  ghcr.io/jaberio/airshare:v1.0.0
+  ghcr.io/jaberio/airshare:latest
 ```
 
 Open your browser and visit: `http://localhost:4111`
@@ -110,7 +110,7 @@ docker run -d \
   -e TRUST_PROXY=1 \
   --name airshare \
   --restart unless-stopped \
-  ghcr.io/jaberio/airshare:v1.0.0
+  ghcr.io/jaberio/airshare:latest
 ```
 
 Example with Docker Compose - uncomment in `docker-compose.yml`:
@@ -121,7 +121,52 @@ environment:
 
 ---
 
-## 🏗️ Technologies
+## 📊 Logging
+
+The application automatically logs all server activity to timestamped log files in the `logs/` directory. This is useful for debugging, monitoring, and auditing.
+
+### Log Files
+- Location: `logs/` directory (created automatically)
+- Format: `YYYY-MM-DD_HH-mm-ss.log`
+- Content: All console output (INFO, ERROR, WARN, DEBUG levels) with timestamps
+
+### Log Levels
+- **INFO**: General application events (server startup, user connections)
+- **ERROR**: Error messages with stack traces
+- **WARN**: Warning messages
+- **DEBUG**: Debug information
+
+### Example Log Entry
+```
+[2026-01-10T00:35:43.123Z] [INFO] Server is running on http://localhost:3000
+[2026-01-10T00:36:15.456Z] [INFO] User connected: {"id":"dLp6Aw_two9IKQcIAAAB"}
+[2026-01-10T00:36:19.789Z] [ERROR] Error reading index.html {"message":"File not found","stack":"..."}
+```
+
+### Docker Volume Mounting
+To persist logs when running in Docker:
+
+```bash
+docker run -d \
+  -p 4111:3000 \
+  -v airshare-logs:/app/logs \
+  --name airshare \
+  --restart unless-stopped \
+  ghcr.io/jaberio/airshare:latest
+```
+
+Or with Docker Compose:
+```yaml
+services:
+  airshare:
+    volumes:
+      - airshare-logs:/app/logs
+
+volumes:
+  airshare-logs:
+```
+
+---
 
 - **Frontend**: HTML5, CSS3, Vanilla JavaScript (ES Modules)
 - **Backend**: Node.js, Express
