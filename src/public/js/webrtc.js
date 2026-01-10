@@ -123,13 +123,17 @@ export class WebRTCManager {
                 console.error('Current state:', channel.readyState);
                 console.error('Peer connection state:', this.peerConnection?.connectionState);
                 console.error('ICE connection state:', this.peerConnection?.iceConnectionState);
-                this.ui.showError('Data channel failed to open - connection may be blocked by firewall');
+                console.error('ICE gathering state:', this.peerConnection?.iceGatheringState);
+                this.ui.showError('Data channel failed to open - connection may be blocked by firewall or NAT');
             }
         }, 10000);
         
         channel.onopen = () => {
             clearTimeout(openTimeout);
-            console.log('Data channel opened, fileToSend:', fileToSend ? fileToSend.name : 'none', 'pendingFile:', this.pendingFile ? this.pendingFile.name : 'none');
+            console.log('✓ Data channel opened successfully');
+            console.log('Channel ready state:', channel.readyState);
+            console.log('Peer connection state:', this.peerConnection?.connectionState);
+            console.log('fileToSend:', fileToSend ? fileToSend.name : 'none', 'pendingFile:', this.pendingFile ? this.pendingFile.name : 'none');
             const fileToTransfer = fileToSend || this.pendingFile;
             if (fileToTransfer) {
                 console.log('Starting file transfer:', fileToTransfer.name);
@@ -145,6 +149,7 @@ export class WebRTCManager {
 
         // Resume sending when buffer drains below threshold
         channel.onbufferedamountlow = () => {
+            console.log('Buffered amount low event fired');
             if (this.sendState.paused && this.sendState.file) {
                 this.sendState.paused = false;
                 this.continueSendFile();
@@ -153,19 +158,26 @@ export class WebRTCManager {
 
         channel.onclose = () => {
             clearTimeout(openTimeout);
-            console.log('Data channel closed');
-            console.log('Peer connection state:', this.peerConnection?.connectionState);
-            console.log('ICE connection state:', this.peerConnection?.iceConnectionState);
+            console.warn('✗ Data channel closed');
+            console.log('Final states:');
+            console.log('  - Channel readyState:', channel.readyState);
+            console.log('  - Peer connection state:', this.peerConnection?.connectionState);
+            console.log('  - ICE connection state:', this.peerConnection?.iceConnectionState);
+            console.log('  - Transfer offset:', this.sendState.offset, 'of', this.sendState.file?.size || 'unknown');
             this.ui.updateStatus('Connection closed');
         };
 
         channel.onerror = (error) => {
             clearTimeout(openTimeout);
-            console.error('Data channel error event:', error);
-            console.error('Channel state:', channel.readyState);
-            console.error('Channel buffered amount:', channel.bufferedAmount);
-            console.error('Peer connection state:', this.peerConnection?.connectionState);
-            console.error('ICE connection state:', this.peerConnection?.iceConnectionState);
+            console.error('✗ Data channel error event:', error);
+            console.error('Channel details:');
+            console.error('  - readyState:', channel.readyState);
+            console.error('  - bufferedAmount:', channel.bufferedAmount);
+            console.error('  - label:', channel.label);
+            console.error('Peer connection details:');
+            console.error('  - connectionState:', this.peerConnection?.connectionState);
+            console.error('  - iceConnectionState:', this.peerConnection?.iceConnectionState);
+            console.error('  - iceGatheringState:', this.peerConnection?.iceGatheringState);
             const errorMsg = error && error.message ? error.message : 'Unknown error';
             this.ui.showError(`Data channel error: ${errorMsg}. State: ${channel.readyState}`);
         };
