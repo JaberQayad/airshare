@@ -144,17 +144,17 @@ export class WebRTCManager {
         // Set backpressure thresholds for proper flow control
         channel.bufferedAmountLowThreshold = this.config.bufferLowWater || 262144; // 256KB
         
-        // Set a timeout to detect if channel never opens
+        // Set a timeout to detect if channel never opens (30 seconds to allow for slow networks)
         const openTimeout = setTimeout(() => {
             if (channel.readyState !== 'open') {
-                console.error('Data channel did not open within 10 seconds');
-                console.error('Current state:', channel.readyState);
-                console.error('Peer connection state:', this.peerConnection?.connectionState);
-                console.error('ICE connection state:', this.peerConnection?.iceConnectionState);
-                console.error('ICE gathering state:', this.peerConnection?.iceGatheringState);
-                this.ui.showError('Data channel failed to open - connection may be blocked by firewall or NAT');
+                console.error('[DATA-CHANNEL] ✗ Channel did not open within 30 seconds');
+                console.error('[DATA-CHANNEL] Current state:', channel.readyState);
+                console.error('[DATA-CHANNEL] Peer connection state:', this.peerConnection?.connectionState);
+                console.error('[DATA-CHANNEL] ICE connection state:', this.peerConnection?.iceConnectionState);
+                console.error('[DATA-CHANNEL] ICE gathering state:', this.peerConnection?.iceGatheringState);
+                this.ui.showError('Data channel failed to open - connection may be blocked by firewall or NAT (check firewall/VPN settings)');
             }
-        }, 10000);
+        }, 30000);
         
         channel.onopen = () => {
             clearTimeout(openTimeout);
@@ -225,15 +225,35 @@ export class WebRTCManager {
 
         // Wait for channel to open if not already
         if (this.dataChannel.readyState !== 'open') {
-            console.log('Waiting for data channel to open...');
-            await new Promise(resolve => {
+            console.log('[SEND] Waiting for data channel to open (current state: ' + this.dataChannel.readyState + ')...');
+            
+            // Wait with timeout to prevent infinite waiting
+            const channelOpenPromise = new Promise((resolve, reject) => {
+                let resolved = false;
                 const checkInterval = setInterval(() => {
                     if (this.dataChannel.readyState === 'open') {
+                        resolved = true;
                         clearInterval(checkInterval);
                         resolve();
                     }
                 }, 100);
+                
+                // Timeout if channel doesn't open in 30 seconds
+                setTimeout(() => {
+                    if (!resolved) {
+                        clearInterval(checkInterval);
+                        reject(new Error(`Data channel did not open (state: ${this.dataChannel.readyState})`));
+                    }
+                }, 30000);
             });
+            
+            try {
+                await channelOpenPromise;
+                console.log('[SEND] ✓ Data channel is now open, proceeding with transfer');
+            } catch (e) {
+                console.error('[SEND] ✗ Timeout waiting for channel to open:', e.message);
+                throw e;
+            }
         }
 
         // Calculate metadata with integrity info
@@ -252,13 +272,14 @@ export class WebRTCManager {
         try {
             if (this.dataChannel.readyState === 'open') {
                 this.dataChannel.send(JSON.stringify(metadata));
-                console.log('Metadata sent, starting file transfer');
+                console.log('[SEND] ✓ Metadata sent, starting file transfer');
                 await this.continueSendFile();
             } else {
-                throw new Error('Data channel failed to open');
+                throw new Error(`Cannot send metadata - data channel state is "${this.dataChannel.readyState}". Peer may have disconnected.`);
             }
         } catch (e) {
-            this.ui.showError(`Failed to start transfer: ${e.message}`);
+            console.error('[SEND] ✗ Transfer error:', e.message);
+            this.ui.showError(`Transfer failed: ${e.message}`);
         }
     }
 
