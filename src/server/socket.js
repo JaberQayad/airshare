@@ -1,8 +1,15 @@
 const logger = require('./logger');
 
+// Track active connections to avoid duplicate logs
+const activeConnections = new Set();
+
 module.exports = (io) => {
     io.on('connection', (socket) => {
-        // Connection logging removed to reduce console noise
+        // Only log if this is a new unique connection
+        if (!activeConnections.has(socket.id)) {
+            activeConnections.add(socket.id);
+            logger.info(`User connected: ${socket.id} (Total users: ${activeConnections.size})`);
+        }
 
         socket.on('join-room', (roomId) => {
             if (!roomId || typeof roomId !== 'string' || !/^[a-zA-Z0-9]+$/.test(roomId)) {
@@ -44,7 +51,11 @@ module.exports = (io) => {
         });
 
         socket.on('disconnect', () => {
-            // Disconnection logging removed to reduce console noise
+            // Only log if this user was being tracked
+            if (activeConnections.has(socket.id)) {
+                activeConnections.delete(socket.id);
+                logger.info(`User disconnected: ${socket.id} (Total users: ${activeConnections.size})`);
+            }
         });
     });
 };
