@@ -1,6 +1,8 @@
+const logger = require('./logger');
+
 module.exports = (io) => {
     io.on('connection', (socket) => {
-        console.log('User connected:', socket.id);
+        logger.info('User connected:', { id: socket.id });
 
         socket.on('join-room', (roomId) => {
             if (!roomId || typeof roomId !== 'string' || !/^[a-zA-Z0-9]+$/.test(roomId)) {
@@ -25,7 +27,7 @@ module.exports = (io) => {
                 return;
             }
             socket.join(roomId);
-            console.log(`Room created: ${roomId} by ${socket.id}`);
+            logger.info(`Room created: ${roomId} by ${socket.id}`);
         });
 
         socket.on('offer', (data) => {
@@ -41,7 +43,7 @@ module.exports = (io) => {
         });
 
         socket.on('disconnect', () => {
-            console.log('User disconnected:', socket.id);
+            logger.info('User disconnected:', { id: socket.id });
         });
     });
 };

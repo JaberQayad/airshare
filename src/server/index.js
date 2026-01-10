@@ -8,6 +8,7 @@ const rateLimit = require('express-rate-limit');
 const config = require('./config');
 const socketHandler = require('./socket');
 const fs = require('fs');
+const logger = require('./logger');
 
 const app = express();
 const server = http.createServer(app);
@@ -48,7 +49,7 @@ app.get(['/', '/index.html'], (req, res) => {
     const indexPath = path.join(__dirname, '../public/index.html');
     fs.readFile(indexPath, 'utf8', (err, data) => {
         if (err) {
-            console.error('Error reading index.html', err);
+            logger.error('Error reading index.html', err);
             return res.status(500).send('Internal Server Error');
         }
         let html = data;
@@ -74,5 +75,5 @@ socketHandler(io);
 
 // Start server
 server.listen(config.port, () => {
-    console.log(`Server is running on http://localhost:${config.port}`);
+    logger.info(`Server is running on http://localhost:${config.port}`);
 });
