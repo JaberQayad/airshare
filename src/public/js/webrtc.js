@@ -177,8 +177,9 @@ export class WebRTCManager {
 
         // Resume sending when buffer drains below threshold
         channel.onbufferedamountlow = () => {
-            console.log('Buffered amount low event fired');
+            console.log('[DRAIN] Buffered amount low event, current buffer:', (this.dataChannel.bufferedAmount / 1024).toFixed(1) + 'KB');
             if (this.sendState.paused && this.sendState.file) {
+                console.log('[DRAIN] Resuming transfer from offset:', this.sendState.offset);
                 this.sendState.paused = false;
                 this.continueSendFile();
             }
@@ -268,34 +269,38 @@ export class WebRTCManager {
         const file = this.sendState.file;
         const highWater = this.config.bufferHighWater || 1048576; // 1MB
         const lowWater = this.config.bufferLowWater || 262144; // 256KB
-        const chunkBatchSize = 10; // Process up to 10 chunks per event loop iteration
+        const chunkBatchSize = 3; // Reduced: process only 3 chunks per iteration for better backpressure handling
         let chunksThisBatch = 0;
 
         while (this.sendState.offset < file.size) {
-            // Check backpressure and pause if needed
+            // Check backpressure BEFORE reading file
             if (this.dataChannel.bufferedAmount > highWater) {
-                console.log(`[BACKPRESSURE] Buffered: ${this.dataChannel.bufferedAmount}, pausing...`);
+                console.log(`[BACKPRESSURE] Buffered: ${(this.dataChannel.bufferedAmount / 1024).toFixed(1)}KB, pausing...`);
                 this.sendState.backpressureCount++;
                 
                 // Adaptive chunk sizing: reduce on frequent backpressure
-                if (this.sendState.backpressureCount > 5) {
+                if (this.sendState.backpressureCount > 3) {
+                    const oldSize = this.sendState.currentChunkSize;
                     this.sendState.currentChunkSize = Math.max(
                         this.config.minChunkSize || 32768,
-                        Math.floor(this.sendState.currentChunkSize * 0.8)
+                        Math.floor(this.sendState.currentChunkSize * 0.7)
                     );
-                    console.log(`[BACKPRESSURE] Reducing chunk size to ${this.sendState.currentChunkSize}`);
+                    console.log(`[BACKPRESSURE] Reducing chunk size from ${oldSize} to ${this.sendState.currentChunkSize}`);
                     this.sendState.backpressureCount = 0;
                 }
                 
                 this.sendState.paused = true;
-                console.log('[SEND] Paused, waiting for bufferedamountlow event');
+                console.log('[SEND] Paused at offset', this.sendState.offset, 'waiting for drain...');
                 return; // Wait for bufferedamountlow event
             } else {
-                this.sendState.backpressureCount = 0;
+                if (this.sendState.backpressureCount > 0) {
+                    console.log('[BACKPRESSURE] Recovered, resuming with buffer at', (this.dataChannel.bufferedAmount / 1024).toFixed(1) + 'KB');
+                    this.sendState.backpressureCount = 0;
+                }
             }
 
-            // Adaptive: increase chunk size if connection is stable
-            if (this.sendState.currentChunkSize < (this.config.maxChunkSize || 262144)) {
+            // Adaptive: increase chunk size if connection is stable and buffer low
+            if (this.sendState.backpressureCount === 0 && this.dataChannel.bufferedAmount < lowWater && this.sendState.currentChunkSize < (this.config.maxChunkSize || 262144)) {
                 this.sendState.currentChunkSize = Math.min(
                     this.config.maxChunkSize || 262144,
                     Math.floor(this.sendState.currentChunkSize * 1.05)
@@ -311,7 +316,7 @@ export class WebRTCManager {
                 // Use FileReader for better handling of large files
                 buffer = await this.readFileSliceAsBuffer(slice);
             } catch (e) {
-                console.error('Failed to read file slice:', e);
+                console.error('[READ] Failed to read file slice:', e);
                 this.ui.showError(`Read error: ${e.message}`);
                 break;
             }
@@ -339,12 +344,12 @@ export class WebRTCManager {
             this.sendState.offset += buffer.byteLength;
             this.updateProgressStats(this.sendState.offset, file.size, true);
 
-            // Batch processing: yield to event loop every N chunks
+            // Batch processing: yield to event loop after N chunks
             chunksThisBatch++;
             if (chunksThisBatch >= chunkBatchSize) {
                 chunksThisBatch = 0;
-                // Yield to allow UI updates and WebRTC events to be processed
-                await new Promise(resolve => setTimeout(resolve, 10));
+                // Longer yield to allow receiver to process and backpressure events
+                await new Promise(resolve => setTimeout(resolve, 50));
             }
         }
 
