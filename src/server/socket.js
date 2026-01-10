@@ -1,61 +1,155 @@
-const logger = require('./logger');
+const logger = require("./logger");
 
-// Track active connections to avoid duplicate logs
-const activeConnections = new Set();
+// If you truly need to know "rooms that were created", track them explicitly.
+// Otherwise, "room not found" is not reliable in Socket.IO.
+const createdRooms = new Set();
+
+// WebSocket rate limiting - track events per socket
+const socketRateLimits = new Map();
+const RATE_LIMIT_WINDOW = 1000; // 1 second
+const RATE_LIMIT_MAX = 10; // Max 10 events per second
+
+const ROOM_ID_REGEX = /^[a-zA-Z0-9_-]{1,64}$/;
+
+function isValidRoomId(roomId) {
+  return typeof roomId === "string" && ROOM_ID_REGEX.test(roomId);
+}
+
+function inRoom(socket, roomId) {
+  // socket.rooms is a Set that always contains socket.id plus joined rooms
+  return socket.rooms && socket.rooms.has(roomId);
+}
+
+// Check and enforce rate limit for socket
+function checkRateLimit(socketId) {
+  const now = Date.now();
+  
+  if (!socketRateLimits.has(socketId)) {
+    socketRateLimits.set(socketId, { count: 1, resetTime: now + RATE_LIMIT_WINDOW });
+    return true;
+  }
+
+  const limit = socketRateLimits.get(socketId);
+  
+  // Reset if window expired
+  if (now > limit.resetTime) {
+    socketRateLimits.set(socketId, { count: 1, resetTime: now + RATE_LIMIT_WINDOW });
+    return true;
+  }
+
+  // Check if limit exceeded
+  if (limit.count >= RATE_LIMIT_MAX) {
+    return false;
+  }
+
+  limit.count++;
+  return true;
+}
 
 module.exports = (io) => {
-    io.on('connection', (socket) => {
-        // Only log if this is a new unique connection
-        if (!activeConnections.has(socket.id)) {
-            activeConnections.add(socket.id);
-            logger.info(`User connected: ${socket.id} (Total users: ${activeConnections.size})`);
+  io.on("connection", (socket) => {
+    logger.info("socket_connected", {
+      socketId: socket.id,
+      // Engine.IO has some handshake info if you want it:
+      // ip: socket.handshake.address,
+    });
+
+    socket.on("create-room", (roomId) => {
+      try {
+        if (!isValidRoomId(roomId)) {
+          logger.warn("invalid_room_id_on_create", { socketId: socket.id, roomId });
+          socket.emit("app-error", { message: "Invalid room ID" });
+          return;
         }
 
-        socket.on('join-room', (roomId) => {
-            if (!roomId || typeof roomId !== 'string' || !/^[a-zA-Z0-9]+$/.test(roomId)) {
-                logger.error('Invalid room ID received', { roomId });
-                socket.emit('error', 'Invalid room ID');
-                return;
-            }
-            const rooms = io.sockets.adapter.rooms;
-            const room = rooms.get(roomId);
+        socket.join(roomId);
+        createdRooms.add(roomId);
 
-            if (room && room.size > 0) {
-                socket.join(roomId);
-                socket.to(roomId).emit('peer-joined', socket.id);
-                socket.emit('room-joined', roomId);
-            } else {
-                socket.emit('room-not-found');
-            }
-        });
-
-        socket.on('create-room', (roomId) => {
-            if (!roomId || typeof roomId !== 'string' || !/^[a-zA-Z0-9]+$/.test(roomId)) {
-                logger.error('Invalid room ID received', { roomId });
-                socket.emit('error', 'Invalid room ID');
-                return;
-            }
-            socket.join(roomId);
-        });
-
-        socket.on('offer', (data) => {
-            socket.to(data.roomId).emit('offer', data);
-        });
-
-        socket.on('answer', (data) => {
-            socket.to(data.roomId).emit('answer', data);
-        });
-
-        socket.on('candidate', (data) => {
-            socket.to(data.roomId).emit('candidate', data);
-        });
-
-        socket.on('disconnect', () => {
-            // Only log if this user was being tracked
-            if (activeConnections.has(socket.id)) {
-                activeConnections.delete(socket.id);
-                logger.info(`User disconnected: ${socket.id} (Total users: ${activeConnections.size})`);
-            }
-        });
+        socket.emit("room-created", { roomId });
+        logger.info("room_created", { socketId: socket.id, roomId });
+      } catch (err) {
+        logger.error("create_room_failed", { socketId: socket.id, roomId, err });
+        socket.emit("app-error", { message: "Failed to create room" });
+      }
     });
+
+    socket.on("join-room", (roomId) => {
+      try {
+        if (!isValidRoomId(roomId)) {
+          logger.warn("invalid_room_id_on_join", { socketId: socket.id, roomId });
+          socket.emit("app-error", { message: "Invalid room ID" });
+          return;
+        }
+
+        // Reliable "not found" only if you track created rooms yourself
+        if (!createdRooms.has(roomId)) {
+          socket.emit("room-not-found", { roomId });
+          return;
+        }
+
+        socket.join(roomId);
+
+        // Notify others + ack to joiner
+        socket.to(roomId).emit("peer-joined", { peerId: socket.id, roomId });
+        socket.emit("room-joined", { roomId });
+
+        logger.info("room_joined", { socketId: socket.id, roomId });
+      } catch (err) {
+        logger.error("join_room_failed", { socketId: socket.id, roomId, err });
+        socket.emit("app-error", { message: "Failed to join room" });
+      }
+    });
+
+    // Generic relay with validation + membership check
+    function relay(eventName) {
+      return (data = {}) => {
+        try {
+          // Rate limit check
+          if (!checkRateLimit(socket.id)) {
+            logger.warn("rate_limit_exceeded", { socketId: socket.id, eventName });
+            socket.emit("app-error", { message: "Too many requests" });
+            return;
+          }
+
+          const { roomId } = data;
+
+          if (!isValidRoomId(roomId)) {
+            logger.warn("invalid_room_id_on_signal", { socketId: socket.id, eventName, roomId });
+            socket.emit("app-error", { message: "Invalid room ID" });
+            return;
+          }
+
+          if (!inRoom(socket, roomId)) {
+            logger.warn("signal_from_non_member", { socketId: socket.id, eventName, roomId });
+            socket.emit("app-error", { message: "Not a member of this room" });
+            return;
+          }
+
+          // Relay the data (you may also want to only relay a whitelist of fields)
+          socket.to(roomId).emit(eventName, { ...data, from: socket.id });
+        } catch (err) {
+          logger.error("signal_relay_failed", { socketId: socket.id, eventName, err });
+          socket.emit("app-error", { message: "Signaling failed" });
+        }
+      };
+    }
+
+    socket.on("offer", relay("offer"));
+    socket.on("answer", relay("answer"));
+    socket.on("candidate", relay("candidate"));
+
+    socket.on("disconnect", (reason) => {
+      logger.info("socket_disconnected", { socketId: socket.id, reason });
+
+      // Clean up rate limit tracking
+      socketRateLimits.delete(socket.id);
+
+      // Optional: cleanup empty rooms from registry
+      // Note: requires checking adapter rooms; with multiple nodes you need a shared store.
+      for (const roomId of createdRooms) {
+        const room = io.sockets.adapter.rooms.get(roomId);
+        if (!room || room.size === 0) createdRooms.delete(roomId);
+      }
+    });
+  });
 };
