@@ -32,6 +32,19 @@ body {
     display: flex;
     justify-content: center;
     align-items: center;
+    flex-direction: column;
+}
+
+.container {
+    width: 100%;
+    max-width: 600px;
+    padding: 2rem;
+    display: flex;
+    flex-direction: column;
+}
+
+main {
+    min-height: auto;
 }
 
 .header-content {
@@ -172,6 +185,15 @@ body {
         color: var(--success-color);
         padding: 0.2rem 0.6rem;
         border-radius: 12px;
+    }
+
+    /* Card */
+    .card {
+        background: var(--surface-color);
+        border-radius: 16px;
+        padding: 2rem;
+        box-shadow: var(--card-shadow);
+        animation: slideUp 0.3s ease;
     }
 
     /* Link Section */
