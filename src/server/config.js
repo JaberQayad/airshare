@@ -16,12 +16,31 @@ if (iceServersEnv) {
     }
 } else {
     // Default: multiple public STUN servers for better NAT traversal
+    // Plus public TURN servers as fallback for restrictive networks
     iceServers = [
+        // Primary STUN servers (Google)
         { urls: 'stun:stun.l.google.com:19302' },
         { urls: 'stun:stun1.l.google.com:19302' },
         { urls: 'stun:stun2.l.google.com:19302' },
         { urls: 'stun:stun3.l.google.com:19302' },
-        { urls: 'stun:stun4.l.google.com:19302' }
+        { urls: 'stun:stun4.l.google.com:19302' },
+        
+        // Alternative STUN servers (Mozilla and others)
+        { urls: 'stun:stun.stunprotocol.org:3478' },
+        { urls: 'stun:stun.disroot.org:3478' },
+        
+        // Public TURN servers for restrictive networks (only if necessary)
+        // Note: Public TURN servers may have limitations, but help with NAT/firewall
+        { 
+            urls: ['turn:openrelay.metered.ca:80', 'turn:openrelay.metered.ca:443'],
+            username: 'openrelay',
+            credential: 'openrelay'
+        },
+        { 
+            urls: ['turn:relay.metered.ca:80', 'turn:relay.metered.ca:443'],
+            username: 'relay',
+            credential: 'relay'
+        }
     ];
 }
 

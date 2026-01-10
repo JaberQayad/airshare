@@ -57,6 +57,13 @@ export class WebRTCManager {
         console.log('Ice servers count:', this.config.iceServers.length);
         console.log('Ice servers:', JSON.stringify(this.config.iceServers));
         
+        // Track ICE candidates for diagnostics
+        this.iceCandidates = {
+            local: [],
+            remote: [],
+            gatheredLocal: false
+        };
+        
         this.peerConnection = new RTCPeerConnection({ iceServers: this.config.iceServers });
 
         this.peerConnection.onicecandidate = (event) => {
@@ -64,11 +71,17 @@ export class WebRTCManager {
                 console.log('[ICE] Candidate:', {
                     type: event.candidate.type,
                     protocol: event.candidate.protocol,
+                    priority: event.candidate.priority,
                     candidate: event.candidate.candidate.substring(0, 60)
+                });
+                this.iceCandidates.local.push({
+                    type: event.candidate.type,
+                    foundation: event.candidate.foundation
                 });
                 this.socket.emit('candidate', { candidate: event.candidate, roomId });
             } else {
-                console.log('[ICE] Gathering complete - all candidates sent');
+                console.log('[ICE] ✓ Gathering complete - ' + this.iceCandidates.local.length + ' local candidates gathered');
+                this.iceCandidates.gatheredLocal = true;
             }
         };
 
@@ -83,13 +96,11 @@ export class WebRTCManager {
             } else if (state === 'connecting') {
                 console.log('⏳ Peer connection connecting...');
             } else if (state === 'failed') {
-                console.error('✗ Peer connection failed - no valid ICE candidate pairs found');
-                console.error('  - Check firewall settings');
-                console.error('  - Check if both peers have internet connectivity');
-                this.ui.showError('Connection failed: Unable to establish peer connection (firewall/NAT issue?)');
+                this.logConnectionFailure();
+                this.ui.showError('Connection failed: Unable to establish peer connection.\n\nTroubleshooting:\n• Check firewall/NAT settings\n• Try disabling VPN\n• Check if both devices are online\n• Allow pop-ups for camera/microphone (if prompted)');
             } else if (state === 'disconnected') {
                 console.warn('⚠️  Connection disconnected');
-                this.ui.showError('Connection disconnected');
+                this.ui.showError('Connection disconnected - peer went offline');
             } else if (state === 'closed') {
                 console.log('Connection closed');
             }
@@ -100,15 +111,16 @@ export class WebRTCManager {
             console.log(`[ICE-CONNECTION] State: ${state}`);
             
             if (state === 'checking') {
-                console.log('⏳ ICE checking candidate pairs...');
+                console.log('⏳ ICE checking ' + this.iceCandidates.local.length + ' local candidates...');
             } else if (state === 'connected') {
                 console.log('✓ ICE connection established');
             } else if (state === 'completed') {
                 console.log('✓ ICE connection completed');
             } else if (state === 'failed') {
-                console.error('✗ ICE connection failed - all candidate pairs failed');
+                console.error('✗ ICE connection failed');
+                this.logICEFailureDetails();
             } else if (state === 'disconnected') {
-                console.warn('⚠️  ICE disconnected');
+                console.warn('⚠️  ICE disconnected - may reconnect');
             }
         };
 
@@ -152,7 +164,11 @@ export class WebRTCManager {
                 console.error('[DATA-CHANNEL] Peer connection state:', this.peerConnection?.connectionState);
                 console.error('[DATA-CHANNEL] ICE connection state:', this.peerConnection?.iceConnectionState);
                 console.error('[DATA-CHANNEL] ICE gathering state:', this.peerConnection?.iceGatheringState);
-                this.ui.showError('Data channel failed to open - connection may be blocked by firewall or NAT (check firewall/VPN settings)');
+                this.logConnectionFailure();
+                const message = this.peerConnection?.connectionState === 'failed' 
+                    ? 'Could not connect to peer - firewall/NAT blocked.\n\nTry:\n• Disabling VPN\n• Using different WiFi/network\n• Checking firewall settings\n• Allowing browser permissions'
+                    : 'Data channel opened but transfer preparation failed.\n\nCheck console for details.';
+                this.ui.showError(message);
             }
         }, 30000);
         
@@ -645,6 +661,7 @@ export class WebRTCManager {
                             protocol: data.candidate.protocol
                         });
                         try {
+                            this.addRemoteCandidate(data.candidate);
                             await this.peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
                             console.log('✓ [SIGNAL] ICE candidate added');
                         } catch (e) {
@@ -700,6 +717,65 @@ export class WebRTCManager {
                 console.error('  Stack:', e.stack);
                 this.ui.showError(`Failed to create offer: ${e.message}`);
             });
+    }
+
+    logConnectionFailure() {
+        console.error('\n=== CONNECTION FAILURE DIAGNOSTICS ===');
+        console.error('[CONNECTION] Current state: ' + this.peerConnection.connectionState);
+        console.error('[ICE-CONNECTION] Current state: ' + this.peerConnection.iceConnectionState);
+        console.error('[ICE-GATHERING] Current state: ' + this.peerConnection.iceGatheringState);
+        console.error('[ICE] Local candidates gathered: ' + this.iceCandidates.local.length);
+        console.error('[ICE] Remote candidates received: ' + this.iceCandidates.remote.length);
+        
+        if (this.iceCandidates.local.length === 0) {
+            console.error('⚠️  NO LOCAL ICE CANDIDATES - Possible causes:');
+            console.error('   - STUN servers unreachable');
+            console.error('   - Network interface problems');
+            console.error('   - Corporate firewall blocking UDP');
+        }
+        if (this.iceCandidates.remote.length === 0) {
+            console.error('⚠️  NO REMOTE ICE CANDIDATES - Possible causes:');
+            console.error('   - Other peer not connected');
+            console.error('   - Signal relay failed');
+            console.error('   - Other peer behind symmetric NAT');
+        }
+        
+        console.error('\nLocal candidates by type:', 
+            this.iceCandidates.local.reduce((acc, c) => {
+                acc[c.type] = (acc[c.type] || 0) + 1;
+                return acc;
+            }, {})
+        );
+        console.error('=== END DIAGNOSTICS ===\n');
+    }
+
+    logICEFailureDetails() {
+        console.error('\n=== ICE FAILURE DIAGNOSTICS ===');
+        console.error('[ICE] Local candidates: ' + this.iceCandidates.local.length);
+        console.error('[ICE] Remote candidates: ' + this.iceCandidates.remote.length);
+        console.error('[ICE] Local gathering complete: ' + this.iceCandidates.gatheredLocal);
+        
+        console.error('Possible causes:');
+        if (this.iceCandidates.local.length > 0 && this.iceCandidates.remote.length > 0) {
+            console.error('✓ Candidates exchanged but connection failed');
+            console.error('   - Try disabling VPN');
+            console.error('   - Try different network (avoid corporate WiFi)');
+            console.error('   - Both peers may need TURN server');
+        } else if (this.iceCandidates.local.length === 0) {
+            console.error('✗ No local candidates (firewall or STUN issue)');
+        } else if (this.iceCandidates.remote.length === 0) {
+            console.error('✗ No remote candidates received (other peer unreachable)');
+        }
+        console.error('=== END ICE DIAGNOSTICS ===\n');
+    }
+
+    addRemoteCandidate(candidate) {
+        if (candidate) {
+            this.iceCandidates.remote.push({
+                type: candidate.type,
+                foundation: candidate.foundation
+            });
+        }
     }
 }
 
