@@ -2,19 +2,44 @@ import { UIManager } from './ui.js';
 import { WebRTCManager } from './webrtc.js';
 
 const socket = io();
+console.log('[APP] Socket.IO client initialized');
+
 const ui = new UIManager();
 let webrtcManager;
 let currentRoomId = null;
+
+// Socket connection events
+socket.on('connect', () => {
+    console.log('[APP] Connected to server, socket ID:', socket.id);
+});
+
+socket.on('disconnect', (reason) => {
+    console.warn('[APP] Disconnected from server:', reason);
+    ui.updateStatus('Disconnected from server');
+});
+
+socket.on('connect_error', (error) => {
+    console.error('[APP] Connection error:', error);
+    ui.showError('Connection error: ' + error.message);
+});
 
 // Fetch config and initialize
 fetch('/config')
     .then(response => response.json())
     .then(config => {
+        console.log('[APP] Config loaded:', {
+            iceServersCount: config.iceServers?.length,
+            port: config.port,
+            chunkSize: config.defaultChunkSize
+        });
         ui.applyConfig(config);
         webrtcManager = new WebRTCManager(socket, config, ui);
         initializeApp();
     })
-    .catch(err => {});
+    .catch(err => {
+        console.error('[APP] Failed to load config:', err);
+        ui.showError('Failed to load configuration: ' + err.message);
+    });
 
 function initializeApp() {
     // Check URL for room
@@ -46,10 +71,13 @@ function initializeApp() {
 
     // Socket Events
     socket.on('room-joined', (room) => {
+        console.log('[APP] Room joined as receiver, roomId:', room.roomId);
+        console.log('[APP] Setting up peer connection as receiver');
         webrtcManager.setupPeerConnection(room.roomId, false);
     });
 
     socket.on('room-not-found', () => {
+        console.error('[APP] Room not found or expired');
         ui.showError('Room not found or expired.');
         window.location.href = '/';
     });
@@ -63,7 +91,12 @@ function initializeApp() {
                 data.peerId,
                 () => {
                     // Accept: establish connection
-                    webrtcManager.createOffer();
+                    console.log('[APP] Sender: User accepted, creating offer in 500ms...');
+                    // Delay to ensure receiver has set up peer connection
+                    setTimeout(() => {
+                        console.log('[APP] Sender: Creating offer now');
+                        webrtcManager.createOffer();
+                    }, 500);
                     socket.emit('peer-accepted', { roomId: currentRoomId, peerId: data.peerId });
                 },
                 () => {

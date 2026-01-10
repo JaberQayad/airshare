@@ -170,6 +170,15 @@ module.exports = (io) => {
             return;
           }
 
+          // Log signal relay
+          logger.info("signal_relayed", { 
+            socketId: socket.id, 
+            eventName, 
+            roomId,
+            hasData: !!data[eventName.toLowerCase()],
+            dataSize: JSON.stringify(data).length
+          });
+
           // Relay to other peers in room with sender ID
           socket.to(roomId).emit(eventName, { ...data, from: socket.id });
         } catch (err) {
