@@ -53,57 +53,85 @@ export class WebRTCManager {
         this.pendingFile = fileToSend; // Store file for later if needed
         this.ui.updateStatus(isInitiator ? 'Waiting for peer...' : 'Connecting...');
 
+        console.log(`=== Creating peer connection (${isInitiator ? 'sender' : 'receiver'}) ===`);
+        console.log('Ice servers count:', this.config.iceServers.length);
+        console.log('Ice servers:', JSON.stringify(this.config.iceServers));
+        
         this.peerConnection = new RTCPeerConnection({ iceServers: this.config.iceServers });
 
         this.peerConnection.onicecandidate = (event) => {
             if (event.candidate) {
-                console.log('ICE candidate found:', event.candidate.candidate.substring(0, 80));
+                console.log('[ICE] Candidate:', {
+                    type: event.candidate.type,
+                    protocol: event.candidate.protocol,
+                    candidate: event.candidate.candidate.substring(0, 60)
+                });
                 this.socket.emit('candidate', { candidate: event.candidate, roomId });
             } else {
-                console.log('ICE gathering complete');
+                console.log('[ICE] Gathering complete - all candidates sent');
             }
         };
 
         this.peerConnection.onconnectionstatechange = () => {
-            console.log('Connection state:', this.peerConnection.connectionState);
-            if (this.peerConnection.connectionState === 'connected') {
+            const state = this.peerConnection.connectionState;
+            console.log(`[CONNECTION] State changed to: ${state}`);
+            
+            if (state === 'connected') {
+                console.log('✓ Peer connection established');
                 this.ui.updateStatus('Connected');
                 this.stats.startTime = Date.now();
-            } else if (this.peerConnection.connectionState === 'failed') {
-                console.error('Peer connection failed - ICE connection failed');
-                this.ui.showError('Connection failed: Unable to establish peer connection (firewall issue?)');
-            } else if (this.peerConnection.connectionState === 'disconnected') {
+            } else if (state === 'connecting') {
+                console.log('⏳ Peer connection connecting...');
+            } else if (state === 'failed') {
+                console.error('✗ Peer connection failed - no valid ICE candidate pairs found');
+                console.error('  - Check firewall settings');
+                console.error('  - Check if both peers have internet connectivity');
+                this.ui.showError('Connection failed: Unable to establish peer connection (firewall/NAT issue?)');
+            } else if (state === 'disconnected') {
+                console.warn('⚠️  Connection disconnected');
                 this.ui.showError('Connection disconnected');
+            } else if (state === 'closed') {
+                console.log('Connection closed');
             }
         };
 
         this.peerConnection.oniceconnectionstatechange = () => {
             const state = this.peerConnection.iceConnectionState;
-            console.log('ICE connection state:', state);
-            if (state === 'failed') {
-                console.error('ICE connection failed - no valid candidate pairs');
+            console.log(`[ICE-CONNECTION] State: ${state}`);
+            
+            if (state === 'checking') {
+                console.log('⏳ ICE checking candidate pairs...');
+            } else if (state === 'connected') {
+                console.log('✓ ICE connection established');
+            } else if (state === 'completed') {
+                console.log('✓ ICE connection completed');
+            } else if (state === 'failed') {
+                console.error('✗ ICE connection failed - all candidate pairs failed');
             } else if (state === 'disconnected') {
-                console.warn('ICE connection disconnected');
+                console.warn('⚠️  ICE disconnected');
             }
         };
 
         this.peerConnection.onicegatheringstatechange = () => {
-            console.log('ICE gathering state:', this.peerConnection.iceGatheringState);
+            const state = this.peerConnection.iceGatheringState;
+            console.log(`[ICE-GATHERING] State: ${state}`);
         };
 
         this.peerConnection.onerror = (event) => {
-            console.error('Peer connection error:', event);
+            console.error('[PEER-CONNECTION] Error:', event);
             this.ui.showError('Peer connection error: ' + (event.error?.message || 'unknown'));
         };
 
         if (isInitiator) {
+            console.log('[DATA-CHANNEL] Creating data channel (sender)...');
             this.dataChannel = this.peerConnection.createDataChannel('fileTransfer', {
                 ordered: true  // Ensure chunks arrive in order
             });
             this.setupDataChannel(this.dataChannel, fileToSend);
         } else {
+            console.log('[DATA-CHANNEL] Waiting for data channel from sender...');
             this.peerConnection.ondatachannel = (event) => {
-                console.log('Data channel received from sender');
+                console.log('[DATA-CHANNEL] Received from sender:', event.channel.label);
                 this.dataChannel = event.channel;
                 this.setupDataChannel(this.dataChannel);
             };
@@ -517,40 +545,51 @@ export class WebRTCManager {
         try {
             switch (type) {
                 case 'offer':
-                    console.log('Received offer, processing...');
+                    console.log('[SIGNAL] Received offer from sender');
+                    console.log('[SIGNAL] SDP offer length:', data.offer?.sdp?.length);
                     if (!data.offer) {
                         throw new Error('No offer in data');
                     }
+                    console.log('[SIGNAL] Setting remote description (offer)...');
                     await this.peerConnection.setRemoteDescription(new RTCSessionDescription(data.offer));
-                    console.log('Remote description (offer) set');
+                    console.log('✓ [SIGNAL] Remote description (offer) set');
+                    console.log('[SIGNAL] Creating answer...');
                     const answer = await this.peerConnection.createAnswer();
-                    console.log('Answer created, setting as local description');
+                    console.log('✓ [SIGNAL] Answer created, setting as local description');
                     await this.peerConnection.setLocalDescription(answer);
-                    console.log('Local description set, sending answer');
+                    console.log('✓ [SIGNAL] Local description set');
+                    console.log('[SIGNAL] Sending answer back to sender');
                     this.socket.emit('answer', { answer: this.peerConnection.localDescription, roomId: this.roomId });
+                    console.log('✓ [SIGNAL] Answer emitted');
                     break;
                 case 'answer':
-                    console.log('Received answer, processing...');
+                    console.log('[SIGNAL] Received answer from receiver');
+                    console.log('[SIGNAL] SDP answer length:', data.answer?.sdp?.length);
                     if (!data.answer) {
                         throw new Error('No answer in data');
                     }
+                    console.log('[SIGNAL] Setting remote description (answer)...');
                     await this.peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer));
-                    console.log('Remote description (answer) set');
+                    console.log('✓ [SIGNAL] Remote description (answer) set');
                     break;
                 case 'candidate':
                     if (data.candidate) {
-                        console.log('Received ICE candidate');
+                        console.log('[SIGNAL] Received ICE candidate:', {
+                            type: data.candidate.type,
+                            protocol: data.candidate.protocol
+                        });
                         try {
                             await this.peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
-                            console.log('ICE candidate added');
+                            console.log('✓ [SIGNAL] ICE candidate added');
                         } catch (e) {
-                            console.warn('Failed to add ICE candidate:', e.message);
+                            console.warn('[SIGNAL] Failed to add ICE candidate:', e.message);
                         }
                     }
                     break;
             }
         } catch (e) {
-            console.error('Signal handling error:', type, e);
+            console.error(`✗ [SIGNAL] Error handling ${type}:`, e.message);
+            console.error('  Stack:', e.stack);
             this.ui.showError(`Signal error (${type}): ${e.message}`);
         }
     }
@@ -561,19 +600,25 @@ export class WebRTCManager {
             return;
         }
 
-        console.log('Creating offer...');
+        console.log('[SIGNAL] Creating offer...');
+        console.log('[SIGNAL] Peer connection state:', this.peerConnection.connectionState);
+        console.log('[SIGNAL] ICE connection state:', this.peerConnection.iceConnectionState);
+        
         this.peerConnection.createOffer()
             .then((offer) => {
-                console.log('Offer created, setting as local description');
+                console.log('✓ [SIGNAL] Offer created');
+                console.log('[SIGNAL] Offer SDP length:', offer.sdp.length);
+                console.log('[SIGNAL] Setting as local description...');
                 return this.peerConnection.setLocalDescription(offer);
             })
             .then(() => {
-                console.log('Local description set');
+                console.log('✓ [SIGNAL] Local description set');
                 if (!this.peerConnection.localDescription) {
                     throw new Error('Local description not set');
                 }
                 const localDesc = this.peerConnection.localDescription;
-                console.log('Sending offer via socket:', {
+                console.log('[SIGNAL] Sending offer to receiver via server');
+                console.log('[SIGNAL] Offer details:', {
                     type: localDesc.type,
                     sdpLength: localDesc.sdp.length,
                     roomId: this.roomId
@@ -582,9 +627,11 @@ export class WebRTCManager {
                     offer: localDesc, 
                     roomId: this.roomId 
                 });
+                console.log('✓ [SIGNAL] Offer emitted');
             })
             .catch(e => {
-                console.error('Failed to create/send offer:', e);
+                console.error('✗ [SIGNAL] Failed to create/send offer:', e.message);
+                console.error('  Stack:', e.stack);
                 this.ui.showError(`Failed to create offer: ${e.message}`);
             });
     }
