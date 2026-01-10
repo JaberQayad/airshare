@@ -26,6 +26,11 @@ export class UIManager {
             logo: document.querySelector('.logo')
         };
 
+        this.fileSelectCallback = null;
+        this.downloadCallback = null;
+        this.acceptConnectionCallback = null;
+        this.errorCallback = null;
+        
         this.initTheme();
         this.bindEvents();
     }
@@ -71,8 +76,6 @@ export class UIManager {
             document.execCommand('copy');
 
             const originalIcon = this.elements.copyButton.innerHTML;
-            this.elements.copyButton.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><use href="css/icons.svg#icon-check"></use></svg>`; // Note: icons.svg path might need adjustment or inline SVG
-            // Using inline checkmark for simplicity
             this.elements.copyButton.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
 
             setTimeout(() => {
@@ -82,6 +85,8 @@ export class UIManager {
     }
 
     onFileSelect(callback) {
+        this.fileSelectCallback = callback;
+        
         this.elements.fileInput.addEventListener('change', (e) => {
             const file = e.target.files[0];
             if (file) callback(file);
@@ -96,7 +101,12 @@ export class UIManager {
     }
 
     onDownloadClick(callback) {
+        this.downloadCallback = callback;
         this.elements.downloadButton.addEventListener('click', callback);
+    }
+
+    onAcceptConnection(callback) {
+        this.acceptConnectionCallback = callback;
     }
 
     showLinkSection(link) {
@@ -136,9 +146,35 @@ export class UIManager {
         if (text) this.elements.transferStatus.textContent = text;
     }
 
-    showDownload() {
+    showDownload(file) {
         this.elements.transferSection.classList.add('hidden');
         this.elements.downloadSection.classList.remove('hidden');
+        
+        // If file is provided, update button click handler for streaming save case
+        if (file) {
+            this.elements.downloadButton.onclick = () => {
+                if (this.downloadCallback) this.downloadCallback(file);
+            };
+        }
+    }
+
+    showError(message) {
+        alert(`Error: ${message}`);
+        if (this.errorCallback) this.errorCallback(message);
+    }
+
+    showWarning(message) {
+        console.warn(message);
+        // Could also show a toast or banner instead of console
+    }
+
+    showConnectionPrompt(peerId, onAccept, onReject) {
+        const accept = confirm(`Peer ${peerId.substring(0, 8)}... wants to connect. Accept?`);
+        if (accept && onAccept) {
+            onAccept();
+        } else if (!accept && onReject) {
+            onReject();
+        }
     }
 
     applyConfig(config) {
@@ -161,3 +197,4 @@ export class UIManager {
         }
     }
 }
+

@@ -4,6 +4,7 @@ import { WebRTCManager } from './webrtc.js';
 const socket = io();
 const ui = new UIManager();
 let webrtcManager;
+let currentRoomId = null;
 
 // Fetch config and initialize
 fetch('/config')
@@ -22,6 +23,7 @@ function initializeApp() {
 
     if (roomId) {
         // Receiver mode
+        currentRoomId = roomId;
         ui.showReceiverUI();
         socket.emit('join-room', roomId);
     }
@@ -29,6 +31,7 @@ function initializeApp() {
     // UI Events
     ui.onFileSelect((file) => {
         const newRoomId = Math.random().toString(36).substring(7);
+        currentRoomId = newRoomId;
         socket.emit('create-room', newRoomId);
 
         const link = `${window.location.origin}/?room=${newRoomId}`;
@@ -37,31 +40,52 @@ function initializeApp() {
         webrtcManager.setupPeerConnection(newRoomId, true, file);
     });
 
-    ui.onDownloadClick(() => {
-        webrtcManager.downloadFile();
+    ui.onDownloadClick((file) => {
+        webrtcManager.downloadFile(file);
     });
 
     // Socket Events
     socket.on('room-joined', (room) => {
-        webrtcManager.setupPeerConnection(room, false);
+        webrtcManager.setupPeerConnection(room.roomId, false);
     });
 
     socket.on('room-not-found', () => {
-        alert('Room not found or expired.');
+        ui.showError('Room not found or expired.');
         window.location.href = '/';
     });
 
-    socket.on('peer-joined', (peerId) => {
-        ui.updateStatus('Peer joined! Sending offer...');
-
-        // Get room ID from URL or input
-        const currentRoomId = new URLSearchParams(window.location.search).get('room') ||
-            document.getElementById('shareLinkInput').value.split('room=')[1];
-
-        webrtcManager.createOffer(currentRoomId);
+    socket.on('peer-joined', (data) => {
+        ui.updateStatus('Peer joined! Send when ready...');
+        // Connection prompt for sender
+        ui.showConnectionPrompt(
+            data.peerId,
+            () => {
+                // Accept: establish connection
+                webrtcManager.createOffer();
+                socket.emit('peer-accepted', { roomId: currentRoomId, peerId: data.peerId });
+            },
+            () => {
+                // Reject: disconnect
+                ui.showError('Connection rejected');
+                socket.emit('peer-rejected', { roomId: currentRoomId, peerId: data.peerId });
+            }
+        );
     });
 
     socket.on('offer', (data) => webrtcManager.handleSignal('offer', data));
     socket.on('answer', (data) => webrtcManager.handleSignal('answer', data));
     socket.on('candidate', (data) => webrtcManager.handleSignal('candidate', data));
+
+    // Error handling from server
+    socket.on('app-error', (data) => {
+        ui.showError(data.message || 'Unknown error');
+    });
+
+    socket.on('peer-rejected', (data) => {
+        ui.showError('Peer rejected the connection');
+    });
+
+    socket.on('disconnect', () => {
+        ui.updateStatus('Disconnected from server');
+    });
 }
