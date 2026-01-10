@@ -40,8 +40,23 @@ const config = {
     port: process.env.PORT || 3000,
     maxFileSize: parseInt(process.env.MAX_FILE_SIZE) || 2147483648, // Default 2GB
     iceServers: iceServers,
-    chunkSize: parseInt(process.env.CHUNK_SIZE) || 262144, // 256KB (was 16KB - too small)
-    maxBufferedAmount: parseInt(process.env.MAX_BUFFERED_AMOUNT) || 1048576, // 1MB (was 64KB)
+    
+    // Chunk and buffer settings
+    defaultChunkSize: parseInt(process.env.DEFAULT_CHUNK_SIZE) || 131072, // 128KB
+    minChunkSize: parseInt(process.env.MIN_CHUNK_SIZE) || 32768, // 32KB
+    maxChunkSize: parseInt(process.env.MAX_CHUNK_SIZE) || 262144, // 256KB
+    bufferHighWater: parseInt(process.env.BUFFER_HIGH_WATER) || 1048576, // 1MB
+    bufferLowWater: parseInt(process.env.BUFFER_LOW_WATER) || 262144, // 256KB
+    
+    // Receiver streaming
+    maxInMemorySize: parseInt(process.env.MAX_IN_MEMORY_SIZE) || 209715200, // 200MB - files larger use streaming
+    
+    // Signaling
+    maxSignalPayloadBytes: parseInt(process.env.MAX_SIGNAL_PAYLOAD_BYTES) || 65536, // 64KB
+    maxPeersPerRoom: parseInt(process.env.MAX_PEERS_PER_ROOM) || 2,
+    roomTtlMs: parseInt(process.env.ROOM_TTL_MS) || 1800000, // 30 minutes
+    
+    // UI/branding
     appTitle: process.env.APP_TITLE || 'AirShare',
     themeColor: process.env.THEME_COLOR || '#6366f1',
     donateUrl: process.env.DONATE_URL,
