@@ -41,6 +41,10 @@ const limiter = rateLimit({
     max: 100, // Limit each IP to 100 requests per windowMs
     standardHeaders: true,
     legacyHeaders: false,
+    skip: (req) => {
+        // Skip rate limiting for local requests in development
+        return req.ip === '::1' || req.ip === '127.0.0.1';
+    }
 });
 app.use(limiter);
 
