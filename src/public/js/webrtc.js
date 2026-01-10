@@ -57,8 +57,10 @@ export class WebRTCManager {
 
         this.peerConnection.onicecandidate = (event) => {
             if (event.candidate) {
-                console.log('ICE candidate:', event.candidate.candidate.substring(0, 50));
+                console.log('ICE candidate found:', event.candidate.candidate.substring(0, 80));
                 this.socket.emit('candidate', { candidate: event.candidate, roomId });
+            } else {
+                console.log('ICE gathering complete');
             }
         };
 
@@ -496,27 +498,39 @@ export class WebRTCManager {
 
     async handleSignal(type, data) {
         if (!this.peerConnection) {
-            console.warn('No peer connection when handling signal:', type);
+            console.error('No peer connection when handling signal:', type);
             return;
         }
 
         try {
             switch (type) {
                 case 'offer':
-                    console.log('Handling offer');
+                    console.log('Received offer, processing...');
+                    if (!data.offer) {
+                        throw new Error('No offer in data');
+                    }
                     await this.peerConnection.setRemoteDescription(new RTCSessionDescription(data.offer));
+                    console.log('Remote description (offer) set');
                     const answer = await this.peerConnection.createAnswer();
+                    console.log('Answer created, setting as local description');
                     await this.peerConnection.setLocalDescription(answer);
-                    this.socket.emit('answer', { answer, roomId: this.roomId });
+                    console.log('Local description set, sending answer');
+                    this.socket.emit('answer', { answer: this.peerConnection.localDescription, roomId: this.roomId });
                     break;
                 case 'answer':
-                    console.log('Handling answer');
+                    console.log('Received answer, processing...');
+                    if (!data.answer) {
+                        throw new Error('No answer in data');
+                    }
                     await this.peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer));
+                    console.log('Remote description (answer) set');
                     break;
                 case 'candidate':
                     if (data.candidate) {
+                        console.log('Received ICE candidate');
                         try {
                             await this.peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
+                            console.log('ICE candidate added');
                         } catch (e) {
                             console.warn('Failed to add ICE candidate:', e.message);
                         }
@@ -530,16 +544,32 @@ export class WebRTCManager {
     }
 
     createOffer() {
-        if (!this.peerConnection) return;
+        if (!this.peerConnection) {
+            console.error('Cannot create offer: no peer connection');
+            return;
+        }
 
+        console.log('Creating offer...');
         this.peerConnection.createOffer()
             .then((offer) => {
-                console.log('Offer created successfully');
+                console.log('Offer created, setting as local description');
                 return this.peerConnection.setLocalDescription(offer);
             })
             .then(() => {
-                console.log('Local description set, sending offer');
-                this.socket.emit('offer', { offer: this.peerConnection.localDescription, roomId: this.roomId });
+                console.log('Local description set');
+                if (!this.peerConnection.localDescription) {
+                    throw new Error('Local description not set');
+                }
+                const localDesc = this.peerConnection.localDescription;
+                console.log('Sending offer via socket:', {
+                    type: localDesc.type,
+                    sdpLength: localDesc.sdp.length,
+                    roomId: this.roomId
+                });
+                this.socket.emit('offer', { 
+                    offer: localDesc, 
+                    roomId: this.roomId 
+                });
             })
             .catch(e => {
                 console.error('Failed to create/send offer:', e);
