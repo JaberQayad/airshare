@@ -90,9 +90,39 @@ docker-compose up -d
 
 ## 🔧 Environment Variables
 
-### General Configuration
+### Server Configuration
 - `PORT` - Server port (default: `3000`)
 - `NODE_ENV` - Node environment (default: `development`)
+- `MAX_FILE_SIZE` - Maximum file size allowed in bytes (default: `107374182400` = 100GB)
+- `APP_TITLE` - Application title (default: `AirShare`)
+- `THEME_COLOR` - Primary theme color hex code (default: `#6366f1`)
+
+### WebRTC Streaming & Backpressure (Enterprise)
+- `MAX_IN_MEMORY_SIZE` - Files larger than this use streaming to disk (default: `209715200` = 200MB)
+  - Uses File System Access API on Chrome/Edge 86+
+  - Fallback to in-memory with warning on unsupported browsers (Safari, Firefox)
+- `DEFAULT_CHUNK_SIZE` - Initial chunk size for transfers (default: `131072` = 128KB)
+- `MIN_CHUNK_SIZE` - Minimum chunk size under backpressure (default: `32768` = 32KB)
+- `MAX_CHUNK_SIZE` - Maximum chunk size when stable (default: `262144` = 256KB)
+- `BUFFER_HIGH_WATER` - Pause sender when buffered amount exceeds (default: `1048576` = 1MB)
+- `BUFFER_LOW_WATER` - Resume sender when buffered amount drops to (default: `262144` = 256KB)
+
+### Signaling & Room Management (Enterprise)
+- `MAX_PEERS_PER_ROOM` - Maximum peers per room (default: `2` = 1 sender + 1 receiver)
+- `ROOM_TTL_MS` - Room time-to-live in milliseconds (default: `1800000` = 30 minutes)
+  - Abandoned rooms auto-cleanup prevents memory leak
+- `MAX_SIGNAL_PAYLOAD_BYTES` - Max signaling message size (default: `65536` = 64KB)
+  - Prevents DoS from oversized signals; typical signals are 1-5KB
+
+### ICE & Network
+- `ICE_SERVERS` - STUN/TURN servers for NAT traversal (JSON array)
+  - Default: `[{"urls":"stun:stun.l.google.com:19302"}]`
+  - Example with TURN: `[{"urls":"stun:stun.l.google.com:19302"},{"urls":"turn:turnserver.com","username":"user","credential":"pass"}]`
+
+### UI & Branding
+- `DONATE_URL` - URL for donation link (optional)
+- `TERMS_URL` - URL for terms of service (optional)
+- `UMAMI_ID` - Umami analytics ID (optional)
 
 ### Reverse Proxy Support
 - `TRUST_PROXY` - Enable trust proxy for correct client IP detection when running behind a reverse proxy (nginx, Apache, etc.)

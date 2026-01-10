@@ -8,11 +8,30 @@ services:
     ports:
       - "4111:3000"
     environment:
+      # Server
       PORT: 3000
       NODE_ENV: production
-      # Uncomment and set TRUST_PROXY when running behind a reverse proxy (nginx, Apache, etc.)
-      # Supported values: 1 or 2 (number of trusted proxies), or true (trust all proxies)
-      # TRUST_PROXY: 1
+      
+      # WebRTC Streaming & Backpressure
+      MAX_IN_MEMORY_SIZE: 209715200      # 200MB threshold for streaming
+      DEFAULT_CHUNK_SIZE: 131072         # 128KB initial chunk
+      MIN_CHUNK_SIZE: 32768              # 32KB minimum (backpressure)
+      MAX_CHUNK_SIZE: 262144             # 256KB maximum (stable)
+      BUFFER_HIGH_WATER: 1048576         # 1MB pause threshold
+      BUFFER_LOW_WATER: 262144           # 256KB resume threshold
+      
+      # Signaling & Room Management
+      MAX_PEERS_PER_ROOM: 2              # 1 sender + 1 receiver
+      ROOM_TTL_MS: 1800000               # 30 minute room lifetime
+      MAX_SIGNAL_PAYLOAD_BYTES: 65536    # 64KB signaling limit
+      
+      # Uncomment and adjust for production needs
+      # TRUST_PROXY: 1                     # Behind reverse proxy (nginx, etc)
+      # ICE_SERVERS: '[{"urls":"stun:stun.l.google.com:19302"}]'  # STUN/TURN servers
+      # APP_TITLE: AirShare
+      # THEME_COLOR: '#6366f1'
+      # DONATE_URL: ''
+      # TERMS_URL: ''
 
     networks:
       - airshare_net
