@@ -100,12 +100,13 @@ module.exports = (io) => {
       }
     });
 
-    // Generic relay with validation + membership check
+    // Generic relay with validation + membership check + backpressure handling
     function relay(eventName) {
       return (data = {}) => {
         try {
-          // Rate limit check
-          if (!checkRateLimit(socket.id)) {
+          // Skip rate limiting for data-heavy events (offer/answer contain SDP which can be large)
+          const isDataHeavy = ['offer', 'answer'].includes(eventName);
+          if (!isDataHeavy && !checkRateLimit(socket.id)) {
             logger.warn("rate_limit_exceeded", { socketId: socket.id, eventName });
             socket.emit("app-error", { message: "Too many requests" });
             return;
@@ -129,10 +130,16 @@ module.exports = (io) => {
             return;
           }
 
-          // Relay the data (you may also want to only relay a whitelist of fields)
-          socket.to(roomId).emit(eventName, { ...data, from: socket.id });
+          // Relay the data with backpressure handling
+          const targetSockets = io.sockets.adapter.rooms.get(roomId);
+          if (targetSockets && targetSockets.size > 0) {
+            // Use setImmediate to avoid blocking the event loop during large transfers
+            setImmediate(() => {
+              socket.to(roomId).emit(eventName, { ...data, from: socket.id });
+            });
+          }
         } catch (err) {
-          logger.error("signal_relay_failed", { socketId: socket.id, eventName, err });
+          logger.error("signal_relay_failed", { socketId: socket.id, eventName, error: err.message });
           socket.emit("app-error", { message: "Signaling failed" });
         }
       };
