@@ -85,6 +85,7 @@ export class WebRTCManager {
         channel.bufferedAmountLowThreshold = this.config.bufferLowWater || 262144; // 256KB
         
         channel.onopen = () => {
+            console.log('Data channel opened, fileToSend:', fileToSend ? 'yes' : 'no');
             if (fileToSend) {
                 this.sendFile(fileToSend);
             }

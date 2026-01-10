@@ -58,23 +58,24 @@ function initializeApp() {
         const isSender = webrtcManager.isInitiator;
         if (isSender) {
             ui.updateStatus('Peer joined! Send when ready...');
+            // Connection prompt only for sender
+            ui.showConnectionPrompt(
+                data.peerId,
+                () => {
+                    // Accept: establish connection
+                    webrtcManager.createOffer();
+                    socket.emit('peer-accepted', { roomId: currentRoomId, peerId: data.peerId });
+                },
+                () => {
+                    // Reject: disconnect
+                    ui.showError('Connection rejected');
+                    socket.emit('peer-rejected', { roomId: currentRoomId, peerId: data.peerId });
+                }
+            );
         } else {
             ui.updateStatus('Peer joined! Receiving...');
+            // Receiver auto-accepts - no prompt needed
         }
-        // Connection prompt for sender
-        ui.showConnectionPrompt(
-            data.peerId,
-            () => {
-                // Accept: establish connection
-                webrtcManager.createOffer();
-                socket.emit('peer-accepted', { roomId: currentRoomId, peerId: data.peerId });
-            },
-            () => {
-                // Reject: disconnect
-                ui.showError('Connection rejected');
-                socket.emit('peer-rejected', { roomId: currentRoomId, peerId: data.peerId });
-            }
-        );
     });
 
     socket.on('offer', (data) => webrtcManager.handleSignal('offer', data));
