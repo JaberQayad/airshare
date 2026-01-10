@@ -175,13 +175,15 @@ export class WebRTCManager {
             this.handleMessage(event);
         };
 
-        // Resume sending when buffer drains below threshold
+        // Resume sending when buffer drains significantly
         channel.onbufferedamountlow = () => {
-            console.log('[DRAIN] Buffered amount low event, current buffer:', (this.dataChannel.bufferedAmount / 1024).toFixed(1) + 'KB');
-            if (this.sendState.paused && this.sendState.file) {
-                console.log('[DRAIN] Resuming transfer from offset:', this.sendState.offset);
+            const bufferedKB = (this.dataChannel.bufferedAmount / 1024).toFixed(1);
+            console.log(`[DRAIN] Buffer drained to ${bufferedKB}KB, resuming if paused...`);
+            if (this.sendState.paused && this.sendState.file && this.sendState.offset < this.sendState.file.size) {
+                console.log(`[DRAIN] ✓ Resuming from offset ${this.sendState.offset}/${this.sendState.file.size}`);
                 this.sendState.paused = false;
-                this.continueSendFile();
+                // Resume immediately
+                this.continueSendFile().catch(e => console.error('[DRAIN] Error resuming:', e));
             }
         };
 
@@ -262,61 +264,37 @@ export class WebRTCManager {
 
     async continueSendFile() {
         if (!this.sendState.file || !this.dataChannel || this.dataChannel.readyState !== 'open') {
-            console.log('Cannot continue send: file=' + !!this.sendState.file + ', channel=' + !!this.dataChannel + ', state=' + this.dataChannel?.readyState);
+            console.log('[SEND] Cannot continue: file=' + !!this.sendState.file + ', channel=' + !!this.dataChannel + ', ready=' + (this.dataChannel?.readyState === 'open'));
             return;
         }
 
         const file = this.sendState.file;
-        const highWater = this.config.bufferHighWater || 1048576; // 1MB
-        const lowWater = this.config.bufferLowWater || 262144; // 256KB
-        const chunkBatchSize = 3; // Reduced: process only 3 chunks per iteration for better backpressure handling
-        let chunksThisBatch = 0;
+        const highWater = 262144; // 256KB - much lower threshold
+        const lowWater = 65536; // 64KB - resume only when very low
+        
+        let chunksSentThisBatch = 0;
+        const maxChunksPerBatch = 1; // Send only 1 chunk at a time
 
         while (this.sendState.offset < file.size) {
-            // Check backpressure BEFORE reading file
+            // CRITICAL: Check buffer BEFORE reading/sending
+            const bufferedKB = (this.dataChannel.bufferedAmount / 1024).toFixed(1);
+            
             if (this.dataChannel.bufferedAmount > highWater) {
-                console.log(`[BACKPRESSURE] Buffered: ${(this.dataChannel.bufferedAmount / 1024).toFixed(1)}KB, pausing...`);
-                this.sendState.backpressureCount++;
-                
-                // Adaptive chunk sizing: reduce on frequent backpressure
-                if (this.sendState.backpressureCount > 3) {
-                    const oldSize = this.sendState.currentChunkSize;
-                    this.sendState.currentChunkSize = Math.max(
-                        this.config.minChunkSize || 32768,
-                        Math.floor(this.sendState.currentChunkSize * 0.7)
-                    );
-                    console.log(`[BACKPRESSURE] Reducing chunk size from ${oldSize} to ${this.sendState.currentChunkSize}`);
-                    this.sendState.backpressureCount = 0;
-                }
-                
+                console.log(`[BACKPRESSURE] Buffer full: ${bufferedKB}KB > 256KB threshold. Pausing at offset ${this.sendState.offset}`);
                 this.sendState.paused = true;
-                console.log('[SEND] Paused at offset', this.sendState.offset, 'waiting for drain...');
-                return; // Wait for bufferedamountlow event
-            } else {
-                if (this.sendState.backpressureCount > 0) {
-                    console.log('[BACKPRESSURE] Recovered, resuming with buffer at', (this.dataChannel.bufferedAmount / 1024).toFixed(1) + 'KB');
-                    this.sendState.backpressureCount = 0;
-                }
-            }
-
-            // Adaptive: increase chunk size if connection is stable and buffer low
-            if (this.sendState.backpressureCount === 0 && this.dataChannel.bufferedAmount < lowWater && this.sendState.currentChunkSize < (this.config.maxChunkSize || 262144)) {
-                this.sendState.currentChunkSize = Math.min(
-                    this.config.maxChunkSize || 262144,
-                    Math.floor(this.sendState.currentChunkSize * 1.05)
-                );
+                return; // MUST pause here
             }
 
             const end = Math.min(this.sendState.offset + this.sendState.currentChunkSize, file.size);
+            const chunkSize = end - this.sendState.offset;
             
             // Read the file slice
             let buffer;
             try {
                 const slice = file.slice(this.sendState.offset, end);
-                // Use FileReader for better handling of large files
                 buffer = await this.readFileSliceAsBuffer(slice);
             } catch (e) {
-                console.error('[READ] Failed to read file slice:', e);
+                console.error('[READ] Failed to read chunk:', e);
                 this.ui.showError(`Read error: ${e.message}`);
                 break;
             }
@@ -324,19 +302,22 @@ export class WebRTCManager {
             // Compute CRC32 for integrity
             const crc32 = calculateCRC32(buffer);
             
-            // Send chunk with header: [4-byte crc32][chunk data]
+            // Prepare: [4-byte crc32][chunk data]
             const chunkWithCrc = new Uint8Array(buffer.byteLength + 4);
-            new DataView(chunkWithCrc.buffer).setUint32(0, crc32, true); // little-endian
+            new DataView(chunkWithCrc.buffer).setUint32(0, crc32, true);
             chunkWithCrc.set(new Uint8Array(buffer), 4);
 
+            // Send
             try {
                 if (this.dataChannel.readyState !== 'open') {
-                    console.log('[SEND] Channel closed during transfer, offset:', this.sendState.offset);
+                    console.log('[SEND] Channel closed, stopping at offset:', this.sendState.offset);
                     break;
                 }
+                
                 this.dataChannel.send(chunkWithCrc.buffer);
+                console.log(`[SEND] Sent chunk ${Math.floor(this.sendState.offset / this.sendState.currentChunkSize)}: ${chunkSize} bytes, buffer: ${bufferedKB}KB`);
             } catch (e) {
-                console.error('[SEND] Send error:', e.message);
+                console.error('[SEND] Failed to send chunk:', e.message);
                 this.ui.showError(`Send failed: ${e.message}`);
                 break;
             }
@@ -344,17 +325,17 @@ export class WebRTCManager {
             this.sendState.offset += buffer.byteLength;
             this.updateProgressStats(this.sendState.offset, file.size, true);
 
-            // Batch processing: yield to event loop after N chunks
-            chunksThisBatch++;
-            if (chunksThisBatch >= chunkBatchSize) {
-                chunksThisBatch = 0;
-                // Longer yield to allow receiver to process and backpressure events
-                await new Promise(resolve => setTimeout(resolve, 50));
+            // After sending 1 chunk, yield and check buffer again
+            chunksSentThisBatch++;
+            if (chunksSentThisBatch >= maxChunksPerBatch) {
+                chunksSentThisBatch = 0;
+                // Long yield to let receiver catch up
+                await new Promise(resolve => setTimeout(resolve, 100));
             }
         }
 
         if (this.sendState.offset >= file.size) {
-            console.log('[SEND] Transfer complete:', this.sendState.offset, 'bytes sent');
+            console.log('[SEND] ✓ Transfer complete: all', this.sendState.offset, 'bytes sent');
             this.ui.updateProgress(100, 'Transfer Complete!');
         }
     }
