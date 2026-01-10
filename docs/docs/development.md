@@ -402,12 +402,12 @@ module.exports = {
 
 ### Manual Testing Checklist
 
-- [ ] **Small file transfer** (50MB): Should complete in <5 sec
+- [ ] **Small file transfer** (50MB): Should complete in `<5 sec`
 - [ ] **Large file transfer** (1GB): Should stream to disk on Chrome/Edge
 - [ ] **Connection prompt**: Sender sees accept/reject prompt
 - [ ] **Backpressure**: Throttle network (DevTools), observe adaptive chunk sizing
 - [ ] **Max 2 peers**: 3rd peer gets "Room is full" error
-- [ ] **Room TTL**: Wait >30 min or modify TTL config, old rooms cleaned up
+- [ ] **Room TTL**: Wait `>30 min` or modify TTL config, old rooms cleaned up
 - [ ] **CRC32 validation**: Monitor for checksum mismatches (should be none)
 - [ ] **Error handling**: Network drop shows clear error message
 - [ ] **Progress display**: Shows speed + ETA, updates smoothly

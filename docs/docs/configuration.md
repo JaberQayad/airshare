@@ -42,7 +42,7 @@ Threshold (in bytes) above which large files stream to disk instead of buffering
   - File size ≤ 200MB → In-memory buffering (fast)
   - File size > 200MB → File System Access API streaming (Chrome/Edge) + in-memory fallback (Firefox/Safari with warning)
 - **Tuning**:
-  - Lower on systems with <2GB RAM: `MAX_IN_MEMORY_SIZE=104857600` (100MB)
+  - Lower on systems with `<2GB` RAM: `MAX_IN_MEMORY_SIZE=104857600` (100MB)
   - Higher on beefy servers: `MAX_IN_MEMORY_SIZE=524288000` (500MB)
 
 ### DEFAULT_CHUNK_SIZE

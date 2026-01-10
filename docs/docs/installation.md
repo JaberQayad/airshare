@@ -260,7 +260,7 @@ sudo certbot --nginx -d airshare.yourdomain.com
 After installation, verify everything works:
 
 **1. Server is Running**
-- Visit the web interface (http://localhost:port)
+- Visit the web interface (`http://localhost:3000` for local dev or `http://localhost:4111` for Docker)
 - You should see the AirShare UI
 
 **2. Basic Transfer Test**
