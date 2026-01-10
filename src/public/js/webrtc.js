@@ -50,6 +50,7 @@ export class WebRTCManager {
     setupPeerConnection(roomId, isInitiator, fileToSend = null) {
         this.roomId = roomId;
         this.isInitiator = isInitiator;
+        this.pendingFile = fileToSend; // Store file for later if needed
         this.ui.updateStatus(isInitiator ? 'Waiting for peer...' : 'Connecting...');
 
         this.peerConnection = new RTCPeerConnection({ iceServers: this.config.iceServers });
@@ -85,9 +86,13 @@ export class WebRTCManager {
         channel.bufferedAmountLowThreshold = this.config.bufferLowWater || 262144; // 256KB
         
         channel.onopen = () => {
-            console.log('Data channel opened, fileToSend:', fileToSend ? 'yes' : 'no');
-            if (fileToSend) {
-                this.sendFile(fileToSend);
+            console.log('Data channel opened, fileToSend:', fileToSend ? fileToSend.name : 'none', 'pendingFile:', this.pendingFile ? this.pendingFile.name : 'none');
+            const fileToTransfer = fileToSend || this.pendingFile;
+            if (fileToTransfer) {
+                console.log('Starting file transfer:', fileToTransfer.name);
+                this.sendFile(fileToTransfer);
+            } else {
+                console.log('No file to send');
             }
         };
 
