@@ -10,10 +10,11 @@ export class WebRTCManager {
         this.fileInfo = {};
         this.receivedFile = null;
         this.isReceiving = false;
+        this.lastProgressUpdate = 0;
+        this.lastProgressPercentage = -1;
     }
 
     setupPeerConnection(roomId, isInitiator, fileToSend = null) {
-        console.log('Setting up peer connection. Initiator:', isInitiator);
         this.ui.updateStatus(isInitiator ? 'Waiting for peer...' : 'Connecting...');
 
         this.peerConnection = new RTCPeerConnection({ iceServers: this.config.iceServers });
@@ -25,7 +26,6 @@ export class WebRTCManager {
         };
 
         this.peerConnection.onconnectionstatechange = () => {
-            console.log('Connection state:', this.peerConnection.connectionState);
             if (this.peerConnection.connectionState === 'connected') {
                 this.ui.updateStatus('Connected');
             }
@@ -44,7 +44,6 @@ export class WebRTCManager {
 
     setupDataChannel(channel, fileToSend) {
         channel.onopen = () => {
-            console.log('Data channel opened');
             if (fileToSend) {
                 this.sendFile(fileToSend);
             }
@@ -68,23 +67,17 @@ export class WebRTCManager {
         this.dataChannel.send(JSON.stringify(metadata));
 
         // Send file in chunks
-        const chunkSize = this.config.chunkSize || 16384; // Default 16KB
+        const chunkSize = this.config.chunkSize || 262144; // 256KB for better throughput
         let offset = 0;
-        const MAX_BUFFERED_AMOUNT = this.config.maxBufferedAmount || 65536; // Default 64KB
-        let lastLogTime = 0;
+        const MAX_BUFFERED_AMOUNT = this.config.maxBufferedAmount || 1048576; // 1MB for better performance
 
         while (offset < file.size) {
             if (this.dataChannel.readyState !== 'open') {
-                console.error('Data channel is not open');
                 break;
             }
 
             if (this.dataChannel.bufferedAmount > MAX_BUFFERED_AMOUNT) {
-                if (Date.now() - lastLogTime > 1000) {
-                    console.log(`Backpressure: buffered ${this.dataChannel.bufferedAmount}, waiting...`);
-                    lastLogTime = Date.now();
-                }
-                await new Promise(resolve => setTimeout(resolve, 10));
+                await new Promise(resolve => setTimeout(resolve, 50)); // Increased from 10ms
                 continue;
             }
 
@@ -94,24 +87,24 @@ export class WebRTCManager {
             try {
                 this.dataChannel.send(buffer);
             } catch (e) {
-                console.error('Error sending chunk:', e);
                 break;
             }
 
             offset += buffer.byteLength;
 
-            const percentage = Math.round((offset / file.size) * 100);
-            this.ui.updateProgress(percentage, `Transferring... ${percentage}%`);
-
-            if (Date.now() - lastLogTime > 2000) {
-                console.log(`Progress: ${percentage}%, Offset: ${offset}/${file.size}`);
-                lastLogTime = Date.now();
+            // Throttle progress updates to max 10x per second (100ms intervals)
+            const now = Date.now();
+            if (now - this.lastProgressUpdate > 100) {
+                const percentage = Math.round((offset / file.size) * 100);
+                if (percentage !== this.lastProgressPercentage) {
+                    this.ui.updateProgress(percentage, `Transferring... ${percentage}%`);
+                    this.lastProgressPercentage = percentage;
+                }
+                this.lastProgressUpdate = now;
             }
         }
 
-        if (offset >= file.size) {
-            this.ui.updateProgress(100, 'Transfer Complete!');
-        }
+        this.ui.updateProgress(100, 'Transfer Complete!');
     }
 
     handleMessage(event) {
@@ -124,15 +117,24 @@ export class WebRTCManager {
                 this.receivedBuffers = [];
                 this.receivedSize = 0;
                 this.isReceiving = true;
+                this.lastProgressUpdate = 0;
+                this.lastProgressPercentage = -1;
                 this.ui.showTransfer(metadata.name, metadata.size);
-                console.log('Receiving file:', metadata.name, metadata.size);
             }
         } else if (this.isReceiving) {
             this.receivedBuffers.push(data);
             this.receivedSize += data.byteLength;
-            const percentage = Math.round((this.receivedSize / this.fileInfo.size) * 100);
 
-            this.ui.updateProgress(percentage, `Transferring... ${percentage}%`);
+            // Throttle progress updates to max 10x per second (100ms intervals)
+            const now = Date.now();
+            if (now - this.lastProgressUpdate > 100) {
+                const percentage = Math.round((this.receivedSize / this.fileInfo.size) * 100);
+                if (percentage !== this.lastProgressPercentage) {
+                    this.ui.updateProgress(percentage, `Transferring... ${percentage}%`);
+                    this.lastProgressPercentage = percentage;
+                }
+                this.lastProgressUpdate = now;
+            }
 
             // Check if file is completely received
             if (this.receivedSize >= this.fileInfo.size) {
@@ -148,9 +150,7 @@ export class WebRTCManager {
             this.receivedFile = new File([blob], this.fileInfo.name, { type: this.fileInfo.fileType });
             this.receivedBuffers = []; // Clear buffer to free memory
             this.ui.showDownload();
-            console.log('File received successfully');
         } catch (e) {
-            console.error('Error completing file receive:', e);
             this.ui.updateProgress(0, 'Transfer failed');
         }
     }
@@ -183,7 +183,7 @@ export class WebRTCManager {
                 try {
                     await this.peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
                 } catch (e) {
-                    console.error('Error adding received ice candidate', e);
+                    // Silently fail on invalid ICE candidates
                 }
                 break;
         }
@@ -194,10 +194,9 @@ export class WebRTCManager {
             this.peerConnection.createOffer()
                 .then((offer) => this.peerConnection.setLocalDescription(offer))
                 .then(() => {
-                    console.log('Sending offer');
                     this.socket.emit('offer', { offer: this.peerConnection.localDescription, roomId: roomId });
                 })
-                .catch(e => console.error('Error creating offer:', e));
+                .catch(e => {});
         }
     }
 }
