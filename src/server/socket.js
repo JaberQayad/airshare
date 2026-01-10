@@ -111,7 +111,11 @@ module.exports = (io) => {
             return;
           }
 
-          const { roomId } = data;
+          // Extract roomId - handle both direct string and nested object format
+          let roomId = data.roomId;
+          if (typeof roomId === "object" && roomId !== null && roomId.roomId) {
+            roomId = roomId.roomId;
+          }
 
           if (!isValidRoomId(roomId)) {
             logger.warn("invalid_room_id_on_signal", { socketId: socket.id, eventName, roomId });
