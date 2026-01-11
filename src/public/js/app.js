@@ -1,16 +1,91 @@
 import { UIManager } from './ui.js';
 import { WebRTCManager } from './webrtc.js';
 
-const socket = io();
+const SESSION_KEY = 'airshare.session.v1';
+
+function loadSession() {
+    try {
+        const raw = sessionStorage.getItem(SESSION_KEY);
+        return raw ? JSON.parse(raw) : null;
+    } catch {
+        return null;
+    }
+}
+
+function saveSession(next) {
+    try {
+        const prev = loadSession() || {};
+        sessionStorage.setItem(SESSION_KEY, JSON.stringify({ ...prev, ...next }));
+    } catch {
+        // ignore
+    }
+}
+
+const socket = io({
+    transports: ['websocket', 'polling'],
+    upgrade: true,
+    reconnection: true,
+    reconnectionAttempts: Infinity,
+    reconnectionDelay: 500,
+    reconnectionDelayMax: 5000,
+    timeout: 20000
+});
 console.log('[APP] Socket.IO client initialized');
 
 const ui = new UIManager();
 let webrtcManager;
 let currentRoomId = null;
+let selectedFile = null;
+let pendingJoinRole = null; // 'receiver' | 'sender' | null
+let senderRestoreTimer = null;
+
+function getReceiverRoomFromUrl() {
+    const urlParams = new URLSearchParams(window.location.search);
+    return urlParams.get('room');
+}
+
+function isReceiverMode() {
+    return !!getReceiverRoomFromUrl();
+}
+
+function tryRestoreRoomMembership(reason) {
+    if (!currentRoomId) return;
+
+    // Receiver: always re-join by URL room.
+    if (isReceiverMode()) {
+        pendingJoinRole = 'receiver';
+        ui.updateStatus(reason ? `Reconnecting (${reason})...` : 'Reconnecting...');
+        socket.emit('join-room', currentRoomId);
+        return;
+    }
+
+    // Sender: prefer joining the existing room (if the receiver is still there).
+    // If the room no longer exists, we'll fall back to re-creating it.
+    pendingJoinRole = 'sender';
+    ui.updateStatus(reason ? `Restoring room (${reason})...` : 'Restoring room...');
+
+    // Prepare WebRTC so if the room is restored and a peer joins, we're ready.
+    if (webrtcManager && selectedFile) {
+        webrtcManager.setupPeerConnection(currentRoomId, true, selectedFile);
+    }
+
+    socket.emit('join-room', currentRoomId);
+
+    // Fallback: if we don't get a response (e.g. cold start), try to recreate.
+    clearTimeout(senderRestoreTimer);
+    senderRestoreTimer = setTimeout(() => {
+        if (pendingJoinRole === 'sender' && currentRoomId && !isReceiverMode()) {
+            socket.emit('create-room', currentRoomId);
+        }
+    }, 3500);
+}
 
 // Socket connection events
 socket.on('connect', () => {
     console.log('[APP] Connected to server, socket ID:', socket.id);
+    ui.updateStatus('Connected');
+    // If we were previously in a room, ensure we are back in it after reconnect.
+    tryRestoreRoomMembership('connected');
 });
 
 socket.on('disconnect', (reason) => {
@@ -20,7 +95,17 @@ socket.on('disconnect', (reason) => {
 
 socket.on('connect_error', (error) => {
     console.error('[APP] Connection error:', error);
-    ui.showError('Connection error: ' + error.message);
+    // Avoid spamming alerts during transient reconnect attempts.
+    ui.updateStatus('Connection issue... retrying');
+});
+
+socket.on('reconnect', (attempt) => {
+    console.log('[APP] Reconnected after attempts:', attempt);
+    tryRestoreRoomMembership('reconnected');
+});
+
+socket.on('reconnect_attempt', (attempt) => {
+    ui.updateStatus(`Reconnecting... (${attempt})`);
 });
 
 // Fetch config and initialize
@@ -42,21 +127,56 @@ fetch('/config')
     });
 
 function initializeApp() {
+    // If page is restored from back/forward cache, sockets can be stale.
+    window.addEventListener('pageshow', (event) => {
+        if (event.persisted) {
+            window.location.reload();
+        }
+    });
+
+    // If tab was suspended/paused, force a reconnect when it becomes visible.
+    document.addEventListener('visibilitychange', () => {
+        if (document.hidden) return;
+        if (!socket.connected) {
+            socket.connect();
+            // If the browser/network stack is in a bad state, reload after a short grace period.
+            setTimeout(() => {
+                if (!socket.connected) window.location.reload();
+            }, 3000);
+        }
+    });
+
+    // Optional keep-alive ping (helps avoid infra/proxy idling).
+    setInterval(() => {
+        if (document.visibilityState === 'visible') {
+            fetch('/healthz', { cache: 'no-store' }).catch(() => {});
+        }
+    }, 60000);
+
     // Check URL for room
-    const urlParams = new URLSearchParams(window.location.search);
-    const roomId = urlParams.get('room');
+    const roomId = getReceiverRoomFromUrl();
 
     if (roomId) {
         // Receiver mode
         currentRoomId = roomId;
+        saveSession({ mode: 'receiver', roomId });
         ui.showReceiverUI();
         socket.emit('join-room', roomId);
+    } else {
+        // Sender mode: after a hard reload the file is gone, so a previous sender session
+        // can't be resumed safely. Start fresh.
+        const prev = loadSession();
+        if (prev?.mode === 'sender') {
+            try { sessionStorage.removeItem(SESSION_KEY); } catch {}
+        }
     }
 
     // UI Events
     ui.onFileSelect((file) => {
+        selectedFile = file;
         const newRoomId = Math.random().toString(36).substring(7);
         currentRoomId = newRoomId;
+        saveSession({ mode: 'sender', roomId: newRoomId, createdAt: Date.now() });
         socket.emit('create-room', newRoomId);
 
         const link = `${window.location.origin}/?room=${newRoomId}`;
@@ -73,12 +193,47 @@ function initializeApp() {
     socket.on('room-joined', (room) => {
         console.log('[APP] Room joined as receiver, roomId:', room.roomId);
         console.log('[APP] Setting up peer connection as receiver');
+        currentRoomId = room.roomId;
+
+        // If this join was part of sender restore, keep initiator behavior.
+        if (pendingJoinRole === 'sender') {
+            pendingJoinRole = null;
+            clearTimeout(senderRestoreTimer);
+            if (webrtcManager && selectedFile) {
+                ui.updateStatus('Room restored. Waiting for peer...');
+                webrtcManager.setupPeerConnection(room.roomId, true, selectedFile);
+            } else {
+                ui.updateStatus('Reconnected. Select a file again to share.');
+            }
+            return;
+        }
+
+        pendingJoinRole = null;
+        saveSession({ mode: 'receiver', roomId: room.roomId });
         webrtcManager.setupPeerConnection(room.roomId, false);
     });
 
-    socket.on('room-not-found', () => {
-        console.error('[APP] Room not found or expired');
+    socket.on('room-not-found', (payload) => {
+        console.error('[APP] Room not found or expired', payload);
+
+        // Sender restore: recreate the room so the existing link can work again.
+        if (pendingJoinRole === 'sender' && currentRoomId && !isReceiverMode()) {
+            clearTimeout(senderRestoreTimer);
+            pendingJoinRole = null;
+            ui.updateStatus('Room expired. Recreating...');
+            socket.emit('create-room', currentRoomId);
+            if (webrtcManager && selectedFile) {
+                webrtcManager.setupPeerConnection(currentRoomId, true, selectedFile);
+                ui.updateStatus('Room recreated. Waiting for peer...');
+            } else {
+                ui.updateStatus('Room recreated. Select a file again to share.');
+            }
+            return;
+        }
+
+        // Receiver: redirect home.
         ui.showError('Room not found or expired.');
+        try { sessionStorage.removeItem(SESSION_KEY); } catch {}
         window.location.href = '/';
     });
 
@@ -117,14 +272,19 @@ function initializeApp() {
 
     // Error handling from server
     socket.on('app-error', (data) => {
-        ui.showError(data.message || 'Unknown error');
+        const message = data?.message || 'Unknown error';
+
+        // If sender is restoring and the room already exists, just join it.
+        if (pendingJoinRole === 'sender' && /room already exists/i.test(message) && currentRoomId) {
+            socket.emit('join-room', currentRoomId);
+            return;
+        }
+
+        ui.showError(message);
     });
 
     socket.on('peer-rejected', (data) => {
         ui.showError('Peer rejected the connection');
     });
 
-    socket.on('disconnect', () => {
-        ui.updateStatus('Disconnected from server');
-    });
 }

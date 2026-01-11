@@ -12,7 +12,11 @@ const logger = require('./logger');
 
 const app = express();
 const server = http.createServer(app);
-const io = socketIo(server);
+const io = socketIo(server, {
+    transports: ['websocket', 'polling'],
+    pingInterval: parseInt(process.env.SOCKET_PING_INTERVAL || '25000', 10),
+    pingTimeout: parseInt(process.env.SOCKET_PING_TIMEOUT || '60000', 10)
+});
 
 // Security Middleware
 app.use(helmet({
@@ -54,6 +58,12 @@ app.use(limiter);
 
 // Serve static files
 app.use(express.static(path.join(__dirname, '../public')));
+
+// Health check (also used by client keep-alive)
+app.get('/healthz', (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    res.status(200).send('ok');
+});
 
 // Config endpoint
 app.get('/config', (req, res) => {

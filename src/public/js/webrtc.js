@@ -47,7 +47,39 @@ export class WebRTCManager {
         };
     }
 
+    resetConnection() {
+        try {
+            if (this.dataChannel) {
+                try { this.dataChannel.onopen = null; } catch {}
+                try { this.dataChannel.onmessage = null; } catch {}
+                try { this.dataChannel.onclose = null; } catch {}
+                try { this.dataChannel.onerror = null; } catch {}
+                try { this.dataChannel.close(); } catch {}
+            }
+        } finally {
+            this.dataChannel = null;
+        }
+
+        try {
+            if (this.peerConnection) {
+                try { this.peerConnection.onicecandidate = null; } catch {}
+                try { this.peerConnection.onconnectionstatechange = null; } catch {}
+                try { this.peerConnection.oniceconnectionstatechange = null; } catch {}
+                try { this.peerConnection.onicegatheringstatechange = null; } catch {}
+                try { this.peerConnection.ondatachannel = null; } catch {}
+                try { this.peerConnection.close(); } catch {}
+            }
+        } finally {
+            this.peerConnection = null;
+        }
+    }
+
     setupPeerConnection(roomId, isInitiator, fileToSend = null) {
+        // If we are reconnecting, ensure previous connections are closed.
+        if (this.peerConnection || this.dataChannel) {
+            this.resetConnection();
+        }
+
         this.roomId = roomId;
         this.isInitiator = isInitiator;
         this.pendingFile = fileToSend; // Store file for later if needed
