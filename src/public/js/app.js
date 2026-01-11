@@ -3,6 +3,17 @@ import { WebRTCManager } from './webrtc.js';
 
 const SESSION_KEY = 'airshare.session.v1';
 
+function generateSecureIdHex(bytesLength = 16) {
+    try {
+        const bytes = new Uint8Array(bytesLength);
+        crypto.getRandomValues(bytes);
+        return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
+    } catch {
+        // Fallback (less secure) for very old browsers.
+        return Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
+    }
+}
+
 function loadSession() {
     try {
         const raw = sessionStorage.getItem(SESSION_KEY);
@@ -214,7 +225,7 @@ function initializeApp() {
     // UI Events
     ui.onFileSelect((file) => {
         selectedFile = file;
-        const newRoomId = Math.random().toString(36).substring(7);
+        const newRoomId = generateSecureIdHex(16);
         currentRoomId = newRoomId;
         saveSession({ mode: 'sender', roomId: newRoomId, createdAt: Date.now() });
         socket.emit('create-room', newRoomId);

@@ -73,6 +73,12 @@ module.exports = (io) => {
 
     socket.on("create-room", (roomId) => {
       try {
+        if (!checkRateLimit(socket.id)) {
+          logger.warn("rate_limit_exceeded", { socketId: socket.id, eventName: "create-room" });
+          socket.emit("app-error", { message: "Too many requests" });
+          return;
+        }
+
         if (!isValidRoomId(roomId)) {
           logger.warn("invalid_room_id_on_create", { socketId: socket.id, roomId });
           socket.emit("app-error", { message: "Invalid room ID" });
@@ -102,6 +108,12 @@ module.exports = (io) => {
 
     socket.on("join-room", (roomId) => {
       try {
+        if (!checkRateLimit(socket.id)) {
+          logger.warn("rate_limit_exceeded", { socketId: socket.id, eventName: "join-room" });
+          socket.emit("app-error", { message: "Too many requests" });
+          return;
+        }
+
         if (!isValidRoomId(roomId)) {
           logger.warn("invalid_room_id_on_join", { socketId: socket.id, roomId });
           socket.emit("app-error", { message: "Invalid room ID" });
@@ -139,6 +151,12 @@ module.exports = (io) => {
     // Receiver "lobby" flow: request to join without consuming a room slot yet.
     socket.on("request-join", (roomId) => {
       try {
+        if (!checkRateLimit(socket.id)) {
+          logger.warn("rate_limit_exceeded", { socketId: socket.id, eventName: "request-join" });
+          socket.emit("app-error", { message: "Too many requests" });
+          return;
+        }
+
         if (!isValidRoomId(roomId)) {
           logger.warn("invalid_room_id_on_request_join", { socketId: socket.id, roomId });
           socket.emit("app-error", { message: "Invalid room ID" });
@@ -173,6 +191,12 @@ module.exports = (io) => {
     // Sender approves a pending receiver to actually join the room.
     socket.on("peer-accepted", ({ roomId, peerId } = {}) => {
       try {
+        if (!checkRateLimit(socket.id)) {
+          logger.warn("rate_limit_exceeded", { socketId: socket.id, eventName: "peer-accepted" });
+          socket.emit("app-error", { message: "Too many requests" });
+          return;
+        }
+
         if (!isValidRoomId(roomId) || typeof peerId !== "string") {
           socket.emit("app-error", { message: "Invalid accept payload" });
           return;
@@ -227,6 +251,12 @@ module.exports = (io) => {
     // Sender rejects a pending receiver.
     socket.on("peer-rejected", ({ roomId, peerId } = {}) => {
       try {
+        if (!checkRateLimit(socket.id)) {
+          logger.warn("rate_limit_exceeded", { socketId: socket.id, eventName: "peer-rejected" });
+          socket.emit("app-error", { message: "Too many requests" });
+          return;
+        }
+
         if (!isValidRoomId(roomId) || typeof peerId !== "string") {
           socket.emit("app-error", { message: "Invalid reject payload" });
           return;

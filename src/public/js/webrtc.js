@@ -47,6 +47,16 @@ export class WebRTCManager {
         };
     }
 
+    generateSecureIdHex(bytesLength = 16) {
+        try {
+            const bytes = new Uint8Array(bytesLength);
+            crypto.getRandomValues(bytes);
+            return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
+        } catch {
+            return Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
+        }
+    }
+
     resetConnection() {
         try {
             if (this.dataChannel) {
@@ -264,7 +274,7 @@ export class WebRTCManager {
 
     async sendFile(file) {
         this.sendState.file = file;
-        this.sendState.fileId = Math.random().toString(36).substring(7);
+        this.sendState.fileId = this.generateSecureIdHex(16);
         this.sendState.startTime = Date.now();
         this.sendState.offset = 0;
         this.sendState.chunkSize = this.config.defaultChunkSize || 131072;
@@ -338,8 +348,8 @@ export class WebRTCManager {
         }
 
         const file = this.sendState.file;
-        const highWater = 1048576; // 1MB - pause if this high
-        const targetBuffer = 524288; // 512KB - aim for this
+        const highWater = this.config.bufferHighWater || 1048576;
+        const targetBuffer = Math.max(131072, Math.floor(highWater / 2));
         
         // Dynamic batch size: start at 1, increase based on actual buffer levels
         let currentBatchSize = this.sendState.batchSize || 1;
@@ -399,7 +409,7 @@ export class WebRTCManager {
                 chunksSentThisBatch = 0;
                 
                 // Analyze buffer and adapt
-                if (this.dataChannel.bufferedAmount < 128000) { // Buffer very low (< 128KB)
+                if (this.dataChannel.bufferedAmount < Math.floor(targetBuffer * 0.25)) {
                     // We can send faster - increase batch size
                     if (currentBatchSize < 20) {
                         currentBatchSize = Math.min(20, currentBatchSize + 2);
@@ -578,27 +588,28 @@ export class WebRTCManager {
             return;
         }
 
-        // Store chunk
         const chunkIndex = this.receiveState.receivedChunks;
-        this.receiveState.chunks.set(chunkIndex, {
-            data: chunkData,
-            crc32: receivedCrc32
-        });
 
-        this.receiveState.receivedChunks++;
-        this.receiveState.receivedSize += chunkData.byteLength;
-
-        this.updateProgressStats(this.receiveState.receivedSize, this.receiveState.fileInfo.size, false);
-
-        // Stream to file if using streaming API
+        // Stream to file if using streaming API (do not keep chunks in memory)
         if (this.receiveState.useStreaming && this.receiveState.streamWriter) {
             try {
                 await this.receiveState.streamWriter.write(chunkData);
             } catch (e) {
                 this.ui.showError(`Failed to write chunk: ${e.message}`);
-                this.receiveState.useStreaming = false;
+                return;
             }
+        } else {
+            // In-memory path
+            this.receiveState.chunks.set(chunkIndex, {
+                data: chunkData,
+                crc32: receivedCrc32
+            });
         }
+
+        this.receiveState.receivedChunks++;
+        this.receiveState.receivedSize += chunkData.byteLength;
+
+        this.updateProgressStats(this.receiveState.receivedSize, this.receiveState.fileInfo.size, false);
 
         // Check if transfer complete
         if (this.receiveState.receivedChunks >= this.receiveState.totalChunks) {

@@ -61,6 +61,20 @@ if (process.env.TRUST_PROXY) {
     }
 }
 
+// CORS origins (comma-separated). Use '*' to allow any origin.
+// Default: disabled (same-origin usage does not require CORS headers).
+let corsOrigins = false;
+const corsOriginsEnv = process.env.CORS_ORIGINS;
+if (corsOriginsEnv) {
+    const trimmed = corsOriginsEnv.trim();
+    if (trimmed === '*') {
+        corsOrigins = '*';
+    } else {
+        const parts = trimmed.split(',').map(s => s.trim()).filter(Boolean);
+        corsOrigins = parts.length ? parts : false;
+    }
+}
+
 const config = {
     port: process.env.PORT || 3000,
     maxFileSize: parseInt(process.env.MAX_FILE_SIZE) || 2147483648, // Default 2GB
@@ -87,7 +101,10 @@ const config = {
     donateUrl: process.env.DONATE_URL,
     termsUrl: process.env.TERMS_URL,
     umamiId: process.env.UMAMI_ID,
-    trustProxy: trustProxy
+    trustProxy: trustProxy,
+
+    // Security
+    corsOrigins: corsOrigins
 };
 
 module.exports = config;

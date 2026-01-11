@@ -14,6 +14,10 @@ const app = express();
 const server = http.createServer(app);
 const io = socketIo(server, {
     transports: ['websocket', 'polling'],
+    cors: {
+        origin: config.corsOrigins,
+        methods: ['GET', 'POST']
+    },
     pingInterval: parseInt(process.env.SOCKET_PING_INTERVAL || '25000', 10),
     pingTimeout: parseInt(process.env.SOCKET_PING_TIMEOUT || '60000', 10)
 });
@@ -33,7 +37,7 @@ app.use(helmet({
         },
     },
 }));
-app.use(cors());
+app.use(cors({ origin: config.corsOrigins }));
 
 // Trust Proxy Configuration
 // This enables correct client IP detection when running behind a reverse proxy (nginx, Apache, etc.)
