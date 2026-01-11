@@ -38,6 +38,41 @@ let currentRoomId = null;
 let selectedFile = null;
 let pendingJoinRole = null; // 'receiver' | 'sender' | null
 let senderRestoreTimer = null;
+let healthPingDisabled = false;
+let healthPingFailures = 0;
+let lastHealthPingAt = 0;
+
+async function pingHealthz() {
+    if (healthPingDisabled) return;
+    if (document.visibilityState !== 'visible') return;
+
+    const now = Date.now();
+    // Backoff on failures (1m, 2m, 4m, max 10m)
+    const backoffMs = Math.min(600000, 60000 * Math.pow(2, Math.min(healthPingFailures, 4)));
+    if (now - lastHealthPingAt < backoffMs) return;
+    lastHealthPingAt = now;
+
+    try {
+        const res = await fetch('/healthz', { method: 'HEAD', cache: 'no-store' });
+
+        if (res.status === 504) {
+            // Likely proxy/CDN gateway timeout; don't spam.
+            healthPingDisabled = true;
+            return;
+        }
+
+        if (!res.ok) {
+            healthPingFailures++;
+            if (healthPingFailures >= 5) healthPingDisabled = true;
+            return;
+        }
+
+        healthPingFailures = 0;
+    } catch {
+        healthPingFailures++;
+        if (healthPingFailures >= 5) healthPingDisabled = true;
+    }
+}
 
 function getReceiverRoomFromUrl() {
     const urlParams = new URLSearchParams(window.location.search);
@@ -137,6 +172,10 @@ function initializeApp() {
     // If tab was suspended/paused, force a reconnect when it becomes visible.
     document.addEventListener('visibilitychange', () => {
         if (document.hidden) return;
+
+        // Try to wake the server/proxy path too.
+        pingHealthz();
+
         if (!socket.connected) {
             socket.connect();
             // If the browser/network stack is in a bad state, reload after a short grace period.
@@ -146,12 +185,11 @@ function initializeApp() {
         }
     });
 
-    // Optional keep-alive ping (helps avoid infra/proxy idling).
+    // Optional keep-alive ping (helps avoid infra/proxy idling)
+    // Kept intentionally quiet: uses HEAD + backoff + auto-disable if gateway returns 504.
     setInterval(() => {
-        if (document.visibilityState === 'visible') {
-            fetch('/healthz', { cache: 'no-store' }).catch(() => {});
-        }
-    }, 60000);
+        pingHealthz();
+    }, 30000);
 
     // Check URL for room
     const roomId = getReceiverRoomFromUrl();

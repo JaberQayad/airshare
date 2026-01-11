@@ -65,6 +65,11 @@ app.get('/healthz', (req, res) => {
     res.status(200).send('ok');
 });
 
+app.head('/healthz', (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    res.status(200).end();
+});
+
 // Config endpoint
 app.get('/config', (req, res) => {
     res.json(config);
