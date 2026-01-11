@@ -37,6 +37,7 @@ let webrtcManager;
 let currentRoomId = null;
 let selectedFile = null;
 let pendingJoinRole = null; // 'receiver' | 'sender' | null
+let pendingAcceptedPeerId = null;
 let senderRestoreTimer = null;
 let healthPingDisabled = false;
 let healthPingFailures = 0;
@@ -90,7 +91,7 @@ function tryRestoreRoomMembership(reason) {
     if (isReceiverMode()) {
         pendingJoinRole = 'receiver';
         ui.updateStatus(reason ? `Reconnecting (${reason})...` : 'Reconnecting...');
-        socket.emit('join-room', currentRoomId);
+        socket.emit('request-join', currentRoomId);
         return;
     }
 
@@ -199,7 +200,8 @@ function initializeApp() {
         currentRoomId = roomId;
         saveSession({ mode: 'receiver', roomId });
         ui.showReceiverUI();
-        socket.emit('join-room', roomId);
+        ui.updateStatus('Waiting for sender approval...');
+        socket.emit('request-join', roomId);
     } else {
         // Sender mode: after a hard reload the file is gone, so a previous sender session
         // can't be resumed safely. Start fresh.
@@ -251,6 +253,12 @@ function initializeApp() {
         webrtcManager.setupPeerConnection(room.roomId, false);
     });
 
+    socket.on('join-requested', ({ roomId } = {}) => {
+        if (isReceiverMode()) {
+            ui.updateStatus('Waiting for sender approval...');
+        }
+    });
+
     socket.on('room-not-found', (payload) => {
         console.error('[APP] Room not found or expired', payload);
 
@@ -275,32 +283,40 @@ function initializeApp() {
         window.location.href = '/';
     });
 
+    socket.on('peer-join-request', (data) => {
+        const isSender = webrtcManager.isInitiator;
+        if (!isSender) return;
+
+        ui.updateStatus('Peer wants to connect...');
+        ui.showConnectionPrompt(
+            data.peerId,
+            () => {
+                pendingAcceptedPeerId = data.peerId;
+                ui.updateStatus('Accepted. Connecting...');
+                socket.emit('peer-accepted', { roomId: currentRoomId, peerId: data.peerId });
+            },
+            () => {
+                socket.emit('peer-rejected', { roomId: currentRoomId, peerId: data.peerId });
+            }
+        );
+    });
+
     socket.on('peer-joined', (data) => {
         const isSender = webrtcManager.isInitiator;
         if (isSender) {
-            ui.updateStatus('Peer joined! Send when ready...');
-            // Connection prompt only for sender
-            ui.showConnectionPrompt(
-                data.peerId,
-                () => {
-                    // Accept: establish connection
-                    console.log('[APP] Sender: User accepted, creating offer in 500ms...');
-                    // Delay to ensure receiver has set up peer connection
-                    setTimeout(() => {
-                        console.log('[APP] Sender: Creating offer now');
-                        webrtcManager.createOffer();
-                    }, 500);
-                    socket.emit('peer-accepted', { roomId: currentRoomId, peerId: data.peerId });
-                },
-                () => {
-                    // Reject: disconnect
-                    ui.showError('Connection rejected');
-                    socket.emit('peer-rejected', { roomId: currentRoomId, peerId: data.peerId });
-                }
-            );
+            // Only create an offer once the server confirms the accepted peer actually joined.
+            if (pendingAcceptedPeerId && data.peerId === pendingAcceptedPeerId) {
+                pendingAcceptedPeerId = null;
+                ui.updateStatus('Peer joined! Creating offer...');
+                // Small delay to allow receiver to initialize its peer connection after room-joined.
+                setTimeout(() => {
+                    webrtcManager.createOffer();
+                }, 600);
+            } else {
+                ui.updateStatus('Peer joined!');
+            }
         } else {
-            ui.updateStatus('Peer joined! Receiving...');
-            // Receiver auto-accepts - no prompt needed
+            ui.updateStatus('Connected. Receiving...');
         }
     });
 

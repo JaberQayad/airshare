@@ -4,6 +4,10 @@ const config = require("./config");
 // Room registry with TTL tracking
 const roomRegistry = new Map(); // { roomId: { createdAt, peers: Set<socketId> } }
 
+// Pending join requests (receiver tabs that have the link but aren't in the room yet)
+// Map<socketId, roomId>
+const pendingJoinRequests = new Map();
+
 // WebSocket rate limiting - track events per socket
 const socketRateLimits = new Map();
 const RATE_LIMIT_WINDOW = 1000; // 1 second
@@ -132,6 +136,125 @@ module.exports = (io) => {
       }
     });
 
+    // Receiver "lobby" flow: request to join without consuming a room slot yet.
+    socket.on("request-join", (roomId) => {
+      try {
+        if (!isValidRoomId(roomId)) {
+          logger.warn("invalid_room_id_on_request_join", { socketId: socket.id, roomId });
+          socket.emit("app-error", { message: "Invalid room ID" });
+          return;
+        }
+
+        if (!roomRegistry.has(roomId)) {
+          socket.emit("room-not-found", { roomId });
+          return;
+        }
+
+        // If already in room (e.g., refresh after approval), no-op.
+        if (inRoom(socket, roomId)) {
+          socket.emit("room-joined", { roomId });
+          return;
+        }
+
+        pendingJoinRequests.set(socket.id, roomId);
+
+        // Notify existing peers (sender) that someone wants to join.
+        // Note: requester isn't in the room yet, but can still emit to the room.
+        socket.to(roomId).emit("peer-join-request", { peerId: socket.id, roomId });
+        socket.emit("join-requested", { roomId });
+
+        logger.info("join_requested", { socketId: socket.id, roomId });
+      } catch (err) {
+        logger.error("request_join_failed", { socketId: socket.id, roomId, error: err.message });
+        socket.emit("app-error", { message: "Failed to request join" });
+      }
+    });
+
+    // Sender approves a pending receiver to actually join the room.
+    socket.on("peer-accepted", ({ roomId, peerId } = {}) => {
+      try {
+        if (!isValidRoomId(roomId) || typeof peerId !== "string") {
+          socket.emit("app-error", { message: "Invalid accept payload" });
+          return;
+        }
+
+        // Only allow acceptance from an existing room member.
+        if (!inRoom(socket, roomId)) {
+          socket.emit("app-error", { message: "Not a member of this room" });
+          return;
+        }
+
+        if (!roomRegistry.has(roomId)) {
+          socket.emit("room-not-found", { roomId });
+          return;
+        }
+
+        const requestedRoom = pendingJoinRequests.get(peerId);
+        if (requestedRoom !== roomId) {
+          socket.emit("app-error", { message: "No pending request for this peer" });
+          return;
+        }
+
+        const targetSocket = io.sockets.sockets.get(peerId);
+        if (!targetSocket) {
+          pendingJoinRequests.delete(peerId);
+          socket.emit("app-error", { message: "Peer disconnected" });
+          return;
+        }
+
+        const roomInfo = roomRegistry.get(roomId);
+        if (roomInfo.peers.size >= config.maxPeersPerRoom) {
+          targetSocket.emit("app-error", { message: "Room is full" });
+          socket.emit("app-error", { message: "Room is full" });
+          return;
+        }
+
+        pendingJoinRequests.delete(peerId);
+        roomInfo.peers.add(peerId);
+        targetSocket.join(roomId);
+
+        // Notify sender(s) that the peer actually joined.
+        io.to(roomId).emit("peer-joined", { peerId, roomId });
+        targetSocket.emit("room-joined", { roomId });
+
+        logger.info("peer_accepted_and_joined", { socketId: socket.id, peerId, roomId, peerCount: roomInfo.peers.size });
+      } catch (err) {
+        logger.error("peer_accepted_failed", { socketId: socket.id, roomId, peerId, error: err.message });
+        socket.emit("app-error", { message: "Failed to accept peer" });
+      }
+    });
+
+    // Sender rejects a pending receiver.
+    socket.on("peer-rejected", ({ roomId, peerId } = {}) => {
+      try {
+        if (!isValidRoomId(roomId) || typeof peerId !== "string") {
+          socket.emit("app-error", { message: "Invalid reject payload" });
+          return;
+        }
+
+        if (!inRoom(socket, roomId)) {
+          socket.emit("app-error", { message: "Not a member of this room" });
+          return;
+        }
+
+        const requestedRoom = pendingJoinRequests.get(peerId);
+        if (requestedRoom !== roomId) {
+          return;
+        }
+
+        pendingJoinRequests.delete(peerId);
+        const targetSocket = io.sockets.sockets.get(peerId);
+        if (targetSocket) {
+          targetSocket.emit("peer-rejected", { roomId, peerId });
+        }
+
+        logger.info("peer_rejected", { socketId: socket.id, peerId, roomId });
+      } catch (err) {
+        logger.error("peer_rejected_failed", { socketId: socket.id, roomId, peerId, error: err.message });
+        socket.emit("app-error", { message: "Failed to reject peer" });
+      }
+    });
+
     // Generic relay with validation + membership check + payload size limit
     function relay(eventName) {
       return (data = {}) => {
@@ -195,6 +318,8 @@ module.exports = (io) => {
     socket.on("disconnect", (reason) => {
       logger.info("socket_disconnected", { socketId: socket.id, reason });
       socketRateLimits.delete(socket.id);
+
+      pendingJoinRequests.delete(socket.id);
 
       // Remove socket from all rooms in registry
       for (const [roomId, info] of roomRegistry.entries()) {
