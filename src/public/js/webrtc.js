@@ -45,6 +45,24 @@ export class WebRTCManager {
             startTime: null,
             speedSamples: [] // Track recent speeds for averaging
         };
+
+        // Connection lifecycle flags
+        this.lifecycle = {
+            intentionalClose: false,
+            transferComplete: false,
+            disconnectTimer: null
+        };
+    }
+
+    markIntentionalClose() {
+        this.lifecycle.intentionalClose = true;
+    }
+
+    clearDisconnectTimer() {
+        if (this.lifecycle.disconnectTimer) {
+            clearTimeout(this.lifecycle.disconnectTimer);
+            this.lifecycle.disconnectTimer = null;
+        }
     }
 
     generateSecureIdHex(bytesLength = 16) {
@@ -58,6 +76,9 @@ export class WebRTCManager {
     }
 
     resetConnection() {
+        // Suppress noisy disconnect errors during manual teardown/reconnect.
+        this.lifecycle.intentionalClose = true;
+        this.clearDisconnectTimer();
         try {
             if (this.dataChannel) {
                 try { this.dataChannel.onopen = null; } catch {}
@@ -89,6 +110,11 @@ export class WebRTCManager {
         if (this.peerConnection || this.dataChannel) {
             this.resetConnection();
         }
+
+        // New session
+        this.lifecycle.intentionalClose = false;
+        this.lifecycle.transferComplete = false;
+        this.clearDisconnectTimer();
 
         this.roomId = roomId;
         this.isInitiator = isInitiator;
@@ -135,6 +161,7 @@ export class WebRTCManager {
                 console.log('✓ Peer connection established');
                 this.ui.updateStatus('Connected');
                 this.stats.startTime = Date.now();
+                this.clearDisconnectTimer();
             } else if (state === 'connecting') {
                 console.log('⏳ Peer connection connecting...');
             } else if (state === 'failed') {
@@ -142,7 +169,28 @@ export class WebRTCManager {
                 this.ui.showError('Connection failed: Unable to establish peer connection.\n\nTroubleshooting:\n• Check firewall/NAT settings\n• Try disabling VPN\n• Check if both devices are online\n• Allow pop-ups for camera/microphone (if prompted)');
             } else if (state === 'disconnected') {
                 console.warn('⚠️  Connection disconnected');
-                this.ui.showError('Connection disconnected - peer went offline');
+
+                // Normal situations where we should not alert:
+                // - page refresh / navigation
+                // - manual teardown
+                // - transfer already completed
+                // Also allow a short grace period because WebRTC can transiently go "disconnected".
+                if (this.lifecycle.intentionalClose || this.lifecycle.transferComplete || document.hidden) {
+                    this.ui.updateStatus('Peer disconnected');
+                    return;
+                }
+
+                if (!this.lifecycle.disconnectTimer) {
+                    this.ui.updateStatus('Connection lost...');
+                    this.lifecycle.disconnectTimer = setTimeout(() => {
+                        this.lifecycle.disconnectTimer = null;
+                        // Re-check current state before alerting.
+                        const current = this.peerConnection?.connectionState;
+                        if (current === 'disconnected' && !this.lifecycle.intentionalClose && !this.lifecycle.transferComplete) {
+                            this.ui.showError('Connection disconnected - peer went offline');
+                        }
+                    }, 4000);
+                }
             } else if (state === 'closed') {
                 console.log('Connection closed');
             }
@@ -432,6 +480,7 @@ export class WebRTCManager {
 
         if (this.sendState.offset >= file.size) {
             console.log('[SEND] ✓ Complete! Sent', this.sendState.offset, 'bytes');
+            this.lifecycle.transferComplete = true;
             // Store settings for next transfer
             this.sendState.batchSize = currentBatchSize;
             this.sendState.yieldTimeMs = yieldTimeMs;
@@ -622,6 +671,7 @@ export class WebRTCManager {
             // Close stream if active
             if (this.receiveState.streamWriter) {
                 await this.receiveState.streamWriter.close();
+                this.lifecycle.transferComplete = true;
                 this.ui.showDownload(null); // Streaming saved automatically
                 return;
             }
@@ -644,6 +694,7 @@ export class WebRTCManager {
             });
 
             this.receiveState.chunks.clear();
+            this.lifecycle.transferComplete = true;
             this.ui.showDownload(file);
         } catch (e) {
             this.ui.showError(`Failed to complete transfer: ${e.message}`);

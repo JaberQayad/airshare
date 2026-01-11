@@ -174,6 +174,11 @@ fetch('/config')
     });
 
 function initializeApp() {
+    // Avoid showing noisy disconnect errors on refresh/close.
+    window.addEventListener('beforeunload', () => {
+        try { webrtcManager?.markIntentionalClose?.(); } catch {}
+    });
+
     // If page is restored from back/forward cache, sockets can be stale.
     window.addEventListener('pageshow', (event) => {
         if (event.persisted) {
