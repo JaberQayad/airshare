@@ -55,6 +55,58 @@ let senderRestoreTimer = null;
 let healthPingDisabled = false;
 let healthPingFailures = 0;
 let lastHealthPingAt = 0;
+let keepAliveInterval = null;
+
+// Track all timers for cleanup
+const appTimers = new Set();
+
+function cleanupApp() {
+    console.log('[APP] Cleaning up resources...');
+    
+    // Clear all tracked timers
+    appTimers.forEach(timer => {
+        try {
+            clearTimeout(timer);
+            clearInterval(timer);
+        } catch (e) {
+            console.warn('[APP] Failed to clear timer:', e);
+        }
+    });
+    appTimers.clear();
+    
+    // Clear specific timers
+    if (senderRestoreTimer) {
+        clearTimeout(senderRestoreTimer);
+        senderRestoreTimer = null;
+    }
+    if (keepAliveInterval) {
+        clearInterval(keepAliveInterval);
+        keepAliveInterval = null;
+    }
+    
+    // Cleanup WebRTC manager
+    if (webrtcManager) {
+        try {
+            webrtcManager.cleanup();
+        } catch (e) {
+            console.warn('[APP] Failed to cleanup WebRTC manager:', e);
+        }
+    }
+    
+    // Cleanup UI
+    try {
+        ui.cleanup();
+    } catch (e) {
+        console.warn('[APP] Failed to cleanup UI:', e);
+    }
+    
+    // Disconnect socket
+    try {
+        socket.disconnect();
+    } catch (e) {
+        console.warn('[APP] Failed to disconnect socket:', e);
+    }
+}
 
 async function pingHealthz() {
     if (healthPingDisabled) return;
@@ -179,6 +231,7 @@ function initializeApp() {
     // Avoid showing noisy disconnect errors on refresh/close.
     window.addEventListener('beforeunload', () => {
         try { webrtcManager?.markIntentionalClose?.(); } catch {}
+        cleanupApp();
     });
 
     // If page is restored from back/forward cache, sockets can be stale.
@@ -198,17 +251,19 @@ function initializeApp() {
         if (!socket.connected) {
             socket.connect();
             // If the browser/network stack is in a bad state, reload after a short grace period.
-            setTimeout(() => {
+            const reconnectTimer = setTimeout(() => {
                 if (!socket.connected) window.location.reload();
             }, 3000);
+            appTimers.add(reconnectTimer);
         }
     });
 
     // Optional keep-alive ping (helps avoid infra/proxy idling)
     // Kept intentionally quiet: uses HEAD + backoff + auto-disable if gateway returns 504.
-    setInterval(() => {
+    keepAliveInterval = setInterval(() => {
         pingHealthz();
     }, 30000);
+    appTimers.add(keepAliveInterval);
 
     // Check URL for room
     const roomId = getReceiverRoomFromUrl();

@@ -36,6 +36,9 @@ export class UIManager {
         this.errorCallback = null;
         this.currentFile = null;
         
+        // Track event listeners for cleanup
+        this.eventListeners = [];
+        
         this.initTheme();
         this.bindEvents();
     }
@@ -57,7 +60,12 @@ export class UIManager {
     }
 
     bindEvents() {
-        this.elements.themeToggle.addEventListener('click', () => {
+        const addTrackedListener = (element, event, handler) => {
+            element.addEventListener(event, handler);
+            this.eventListeners.push({ element, event, handler });
+        };
+
+        addTrackedListener(this.elements.themeToggle, 'click', () => {
             const currentTheme = document.documentElement.getAttribute('data-theme');
             const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
             document.documentElement.setAttribute('data-theme', newTheme);
@@ -65,18 +73,18 @@ export class UIManager {
             this.updateThemeIcons(newTheme);
         });
 
-        this.elements.dropZone.addEventListener('click', () => this.elements.fileInput.click());
+        addTrackedListener(this.elements.dropZone, 'click', () => this.elements.fileInput.click());
 
-        this.elements.dropZone.addEventListener('dragleave', () => {
+        addTrackedListener(this.elements.dropZone, 'dragleave', () => {
             this.elements.dropZone.classList.remove('drop-zone--over');
         });
 
-        this.elements.dropZone.addEventListener('dragover', (e) => {
+        addTrackedListener(this.elements.dropZone, 'dragover', (e) => {
             e.preventDefault();
             this.elements.dropZone.classList.add('drop-zone--over');
         });
 
-        this.elements.copyButton.addEventListener('click', () => {
+        addTrackedListener(this.elements.copyButton, 'click', () => {
             this.elements.shareLinkInput.select();
             document.execCommand('copy');
 
@@ -92,26 +100,34 @@ export class UIManager {
     onFileSelect(callback) {
         this.fileSelectCallback = callback;
         
-        this.elements.fileInput.addEventListener('change', (e) => {
+        const fileInputHandler = (e) => {
             const file = e.target.files[0];
             if (file) callback(file);
-        });
-
-        this.elements.dropZone.addEventListener('drop', (e) => {
+        };
+        
+        const dropHandler = (e) => {
             e.preventDefault();
             this.elements.dropZone.classList.remove('drop-zone--over');
             const file = e.dataTransfer.files[0];
             if (file) callback(file);
-        });
+        };
+
+        this.elements.fileInput.addEventListener('change', fileInputHandler);
+        this.eventListeners.push({ element: this.elements.fileInput, event: 'change', handler: fileInputHandler });
+        
+        this.elements.dropZone.addEventListener('drop', dropHandler);
+        this.eventListeners.push({ element: this.elements.dropZone, event: 'drop', handler: dropHandler });
     }
 
     onDownloadClick(callback) {
         this.downloadCallback = callback;
-        this.elements.downloadButton.addEventListener('click', () => {
+        const handler = () => {
             if (this.currentFile) {
                 callback(this.currentFile);
             }
-        });
+        };
+        this.elements.downloadButton.addEventListener('click', handler);
+        this.eventListeners.push({ element: this.elements.downloadButton, event: 'click', handler });
     }
 
     onAcceptConnection(callback) {
@@ -205,6 +221,25 @@ export class UIManager {
             this.elements.connectionPromptModal.classList.add('hidden');
             if (onReject) onReject();
         });
+    }
+
+    cleanup() {
+        // Remove all tracked event listeners
+        this.eventListeners.forEach(({ element, event, handler }) => {
+            try {
+                element.removeEventListener(event, handler);
+            } catch (e) {
+                console.warn('[UI] Failed to remove event listener:', e);
+            }
+        });
+        this.eventListeners = [];
+        
+        // Clear callbacks
+        this.fileSelectCallback = null;
+        this.downloadCallback = null;
+        this.acceptConnectionCallback = null;
+        this.errorCallback = null;
+        this.currentFile = null;
     }
 
     applyConfig(config) {

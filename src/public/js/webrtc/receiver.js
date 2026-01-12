@@ -1,5 +1,5 @@
 import { calculateCRC32, crc32ToHex } from '../crc32.js';
-import { formatBytes } from '../utils.js';
+import { formatBytes, shouldUseStreaming, isMobileDevice, getAvailableMemory } from '../utils.js';
 import { updateProgressStats } from './progress.js';
 
 export async function handleMessage(manager, event) {
@@ -31,15 +31,20 @@ export async function initializeReceiver(manager, metadata) {
 
     manager.ui.showTransfer(metadata.name, metadata.size);
 
-    const maxInMemory = manager.config.maxInMemorySize || 209715200;
-    if (metadata.size > maxInMemory) {
+    // Use adaptive threshold based on device capabilities
+    const useStreaming = shouldUseStreaming(metadata.size);
+    
+    if (useStreaming) {
         if (await initializeStreaming(manager, metadata)) {
             manager.receiveState.useStreaming = true;
+            const deviceInfo = isMobileDevice() ? 'mobile' : 'desktop';
+            console.log(`[MEMORY] Using streaming mode for ${formatBytes(metadata.size)} file on ${deviceInfo} device (${getAvailableMemory()}MB RAM)`);
         } else {
             manager.receiveState.useStreaming = false;
         }
     } else {
         manager.receiveState.useStreaming = false;
+        console.log(`[MEMORY] Using in-memory mode for ${formatBytes(metadata.size)} file`);
     }
 
     manager.stats.startTime = Date.now();
@@ -62,11 +67,22 @@ async function initializeStreaming(manager, metadata) {
         }
     }
 
-    if (metadata.size > manager.config.maxInMemorySize) {
+    const isMobile = isMobileDevice();
+    const memoryMB = getAvailableMemory();
+    const estimatedUsageMB = Math.ceil(metadata.size / 1048576);
+    
+    if (estimatedUsageMB > memoryMB * 0.5) {
+        manager.ui.showWarning(
+            `⚠️ File is ${formatBytes(metadata.size)}. ` +
+            `Your ${isMobile ? 'mobile ' : ''}browser doesn't support streaming. ` +
+            `This may use ~${estimatedUsageMB}MB RAM (${Math.round(estimatedUsageMB/memoryMB*100)}% of available memory). ` +
+            `Transfer may be slow or fail on low-memory devices.`
+        );
+    } else {
         manager.ui.showWarning(
             `File is ${formatBytes(metadata.size)}. ` +
             `Your browser doesn't support streaming. ` +
-            `Large file transfer may consume significant memory.`
+            `Large file transfer may consume significant memory (~${estimatedUsageMB}MB).`
         );
     }
 
