@@ -1,40 +1,18 @@
 import { clearDisconnectTimer, markIntentionalClose } from './lifecycle.js';
+import { clearTimer, clearDataChannel, clearRTCConnection } from '../utils/cleanup.js';
+import { logger } from '../utils/logger.js';
 
 export function resetConnection(manager) {
-    // Suppress noisy disconnect errors during manual teardown/reconnect.
     markIntentionalClose(manager);
     clearDisconnectTimer(manager);
+    clearTimer(manager.dataChannelOpenTimeout);
+    manager.dataChannelOpenTimeout = null;
 
-    // Clear any pending data channel timeout
-    if (manager.dataChannelOpenTimeout) {
-        clearTimeout(manager.dataChannelOpenTimeout);
-        manager.dataChannelOpenTimeout = null;
-    }
+    clearDataChannel(manager.dataChannel);
+    manager.dataChannel = null;
 
-    try {
-        if (manager.dataChannel) {
-            try { manager.dataChannel.onopen = null; } catch {}
-            try { manager.dataChannel.onmessage = null; } catch {}
-            try { manager.dataChannel.onclose = null; } catch {}
-            try { manager.dataChannel.onerror = null; } catch {}
-            try { manager.dataChannel.close(); } catch {}
-        }
-    } finally {
-        manager.dataChannel = null;
-    }
-
-    try {
-        if (manager.peerConnection) {
-            try { manager.peerConnection.onicecandidate = null; } catch {}
-            try { manager.peerConnection.onconnectionstatechange = null; } catch {}
-            try { manager.peerConnection.oniceconnectionstatechange = null; } catch {}
-            try { manager.peerConnection.onicegatheringstatechange = null; } catch {}
-            try { manager.peerConnection.ondatachannel = null; } catch {}
-            try { manager.peerConnection.close(); } catch {}
-        }
-    } finally {
-        manager.peerConnection = null;
-    }
+    clearRTCConnection(manager.peerConnection);
+    manager.peerConnection = null;
 }
 
 export function setupPeerConnection(manager, roomId, isInitiator, fileToSend = null) {
@@ -49,10 +27,8 @@ export function setupPeerConnection(manager, roomId, isInitiator, fileToSend = n
     manager.lifecycle.peerJoinedAt = null;
     manager.lifecycle.everConnected = false;
     manager.lifecycle.restartingForPeer = false;
-    if (manager.lifecycle.restartTimer) {
-        clearTimeout(manager.lifecycle.restartTimer);
-        manager.lifecycle.restartTimer = null;
-    }
+    clearTimer(manager.lifecycle.restartTimer);
+    manager.lifecycle.restartTimer = null;
     clearDisconnectTimer(manager);
 
     // Signaling state
@@ -65,9 +41,8 @@ export function setupPeerConnection(manager, roomId, isInitiator, fileToSend = n
 
     const iceServers = Array.isArray(manager.config?.iceServers) ? manager.config.iceServers : [];
 
-    console.log(`=== Creating peer connection (${isInitiator ? 'sender' : 'receiver'}) ===`);
-    console.log('Ice servers count:', iceServers.length);
-    console.log('Ice servers:', JSON.stringify(iceServers));
+    logger.debug('CONNECTION', `Creating peer connection (${isInitiator ? 'sender' : 'receiver'})`);
+    logger.debug('CONNECTION', 'ICE servers:', { count: iceServers.length, servers: iceServers });
 
     manager.iceCandidates = {
         local: [],
@@ -79,35 +54,30 @@ export function setupPeerConnection(manager, roomId, isInitiator, fileToSend = n
 
     manager.peerConnection.onicecandidate = (event) => {
         if (event.candidate) {
-            console.log('[ICE] Candidate:', {
-                type: event.candidate.type,
-                protocol: event.candidate.protocol,
-                priority: event.candidate.priority,
-                candidate: event.candidate.candidate.substring(0, 60)
-            });
+            logger.debug('ICE', `Found ${event.candidate.type} candidate via ${event.candidate.protocol}`);
             manager.iceCandidates.local.push({
                 type: event.candidate.type,
                 foundation: event.candidate.foundation
             });
             manager.socket.emit('candidate', { candidate: event.candidate, roomId });
         } else {
-            console.log('[ICE] ✓ Gathering complete - ' + manager.iceCandidates.local.length + ' local candidates gathered');
+            logger.info('ICE', `Gathering complete - ${manager.iceCandidates.local.length} local candidates gathered`);
             manager.iceCandidates.gatheredLocal = true;
         }
     };
 
     manager.peerConnection.onconnectionstatechange = () => {
         const state = manager.peerConnection.connectionState;
-        console.log(`[CONNECTION] State changed to: ${state}`);
+        logger.debug('CONNECTION', `State: ${state}`);
 
         if (state === 'connected') {
-            console.log('✓ Peer connection established');
+            logger.info('CONNECTION', 'Peer connection established successfully');
             manager.lifecycle.everConnected = true;
             manager.ui.updateStatus('Connected');
             manager.stats.startTime = Date.now();
             clearDisconnectTimer(manager);
         } else if (state === 'connecting') {
-            console.log('⏳ Peer connection connecting...');
+            logger.debug('CONNECTION', 'Connecting to peer...');
         } else if (state === 'failed') {
             // If we were previously connected and then the receiver closed their tab,
             // browsers often transition disconnected -> failed. That's expected and shouldn't
@@ -117,7 +87,7 @@ export function setupPeerConnection(manager, roomId, isInitiator, fileToSend = n
             }
 
             if (manager.lifecycle.everConnected) {
-                console.log('[CONNECTION] Peer left (failed after connected)');
+                logger.info('CONNECTION', 'Peer disconnected (connection failed after established)');
                 manager.ui.updateStatus('Peer disconnected');
 
                 // Sender: automatically re-create a fresh peer connection so the same link can accept
@@ -145,7 +115,7 @@ export function setupPeerConnection(manager, roomId, isInitiator, fileToSend = n
             manager.logConnectionFailure();
             manager.ui.showError('Connection failed: Unable to establish peer connection.\n\nTroubleshooting:\n• Check firewall/NAT settings\n• Try disabling VPN\n• Check if both devices are online\n• Allow pop-ups for camera/microphone (if prompted)');
         } else if (state === 'disconnected') {
-            console.warn('⚠️  Connection disconnected');
+            logger.warn('CONNECTION', 'Peer disconnected, waiting for reconnection...');
 
             if (manager.lifecycle.intentionalClose || manager.lifecycle.transferComplete || document.hidden) {
                 manager.ui.updateStatus('Peer disconnected');
@@ -163,54 +133,52 @@ export function setupPeerConnection(manager, roomId, isInitiator, fileToSend = n
                 }, 4000);
             }
         } else if (state === 'closed') {
-            console.log('Connection closed');
+            logger.debug('CONNECTION', 'Connection closed');
         }
     };
 
     manager.peerConnection.oniceconnectionstatechange = () => {
         const state = manager.peerConnection.iceConnectionState;
-        console.log(`[ICE-CONNECTION] State: ${state}`);
+        logger.debug('ICE', `Connection state: ${state}`);
 
         if (state === 'checking') {
-            console.log('⏳ ICE checking ' + manager.iceCandidates.local.length + ' local candidates...');
+            logger.debug('ICE', `Checking connectivity with ${manager.iceCandidates.local.length} local candidates`);
         } else if (state === 'connected') {
-            console.log('✓ ICE connection established');
+            logger.info('ICE', 'Connection established');
         } else if (state === 'completed') {
-            console.log('✓ ICE connection completed');
+            logger.info('ICE', 'Connection completed successfully');
         } else if (state === 'failed') {
-            // If we were previously connected, an ICE "failed" after disconnect is commonly
-            // the remote tab closing. Don't spam full diagnostics in that case.
             if (manager.lifecycle.everConnected) {
-                console.warn('⚠️  ICE failed after being connected (peer likely left)');
+                logger.warn('ICE', 'Connection failed (peer likely closed tab)');
                 return;
             }
-            console.error('✗ ICE connection failed');
+            logger.error('ICE', 'Connection failed - NAT/firewall issue');
             manager.logICEFailureDetails();
         } else if (state === 'disconnected') {
-            console.warn('⚠️  ICE disconnected - may reconnect');
+            logger.warn('ICE', 'Disconnected - attempting to reconnect');
         }
     };
 
     manager.peerConnection.onicegatheringstatechange = () => {
         const state = manager.peerConnection.iceGatheringState;
-        console.log(`[ICE-GATHERING] State: ${state}`);
+        logger.debug('ICE', `Gathering ${state}`);
     };
 
     manager.peerConnection.onerror = (event) => {
-        console.error('[PEER-CONNECTION] Error:', event);
+        logger.error('CONNECTION', 'Peer connection error:', event.error?.message || 'unknown');
         manager.ui.showError('Peer connection error: ' + (event.error?.message || 'unknown'));
     };
 
     if (isInitiator) {
-        console.log('[DATA-CHANNEL] Creating data channel (sender)...');
+        logger.debug('DATA-CHANNEL', 'Creating data channel as sender');
         manager.dataChannel = manager.peerConnection.createDataChannel('fileTransfer', {
             ordered: true
         });
         setupDataChannel(manager, manager.dataChannel, fileToSend);
     } else {
-        console.log('[DATA-CHANNEL] Waiting for data channel from sender...');
+        logger.debug('DATA-CHANNEL', 'Waiting to receive data channel from sender');
         manager.peerConnection.ondatachannel = (event) => {
-            console.log('[DATA-CHANNEL] Received from sender:', event.channel.label);
+            logger.info('DATA-CHANNEL', `Received channel: ${event.channel.label}`);
             manager.dataChannel = event.channel;
             setupDataChannel(manager, manager.dataChannel);
         };
@@ -221,26 +189,22 @@ export function setupDataChannel(manager, channel, fileToSend) {
     channel.binaryType = 'arraybuffer';
     channel.bufferedAmountLowThreshold = manager.config.bufferLowWater || 262144;
 
-    // Clear any existing timeout from previous connection attempts
-    if (manager.dataChannelOpenTimeout) {
-        clearTimeout(manager.dataChannelOpenTimeout);
-    }
+    clearTimer(manager.dataChannelOpenTimeout);
 
     manager.dataChannelOpenTimeout = setTimeout(() => {
         if (channel.readyState !== 'open') {
-            // If the sender is simply waiting for a receiver to open/accept the link,
-            // the channel will stay "connecting" and the PC will stay "new". That's not a failure.
             if (manager.isInitiator && !manager.lifecycle?.hasRemotePeer) {
-                // Keep this intentionally quiet: this is the normal steady-state before a peer joins.
                 manager.ui.updateStatus('Waiting for peer to join...');
                 return;
             }
 
-            console.error('[DATA-CHANNEL] ✗ Channel did not open within 30 seconds');
-            console.error('[DATA-CHANNEL] Current state:', channel.readyState);
-            console.error('[DATA-CHANNEL] Peer connection state:', manager.peerConnection?.connectionState);
-            console.error('[DATA-CHANNEL] ICE connection state:', manager.peerConnection?.iceConnectionState);
-            console.error('[DATA-CHANNEL] ICE gathering state:', manager.peerConnection?.iceGatheringState);
+            logger.error('DATA-CHANNEL', 'Failed to open within 30 seconds');
+            logger.logState('DATA-CHANNEL', {
+                channelState: channel.readyState,
+                peerState: manager.peerConnection?.connectionState,
+                iceState: manager.peerConnection?.iceConnectionState,
+                gatheringState: manager.peerConnection?.iceGatheringState
+            });
 
             manager.logConnectionFailure();
             const message = manager.peerConnection?.connectionState === 'failed'
@@ -251,20 +215,16 @@ export function setupDataChannel(manager, channel, fileToSend) {
     }, 30000);
 
     channel.onopen = () => {
-        if (manager.dataChannelOpenTimeout) {
-            clearTimeout(manager.dataChannelOpenTimeout);
-            manager.dataChannelOpenTimeout = null;
-        }
-        console.log('✓ Data channel opened successfully');
-        console.log('Channel ready state:', channel.readyState);
-        console.log('Peer connection state:', manager.peerConnection?.connectionState);
-        console.log('fileToSend:', fileToSend ? fileToSend.name : 'none', 'pendingFile:', manager.pendingFile ? manager.pendingFile.name : 'none');
+        clearTimer(manager.dataChannelOpenTimeout);
+        manager.dataChannelOpenTimeout = null;
+        
+        logger.info('DATA-CHANNEL', 'Channel opened successfully');
         const fileToTransfer = fileToSend || manager.pendingFile;
         if (fileToTransfer) {
-            console.log('Starting file transfer:', fileToTransfer.name);
+            logger.info('TRANSFER', `Starting transfer: ${fileToTransfer.name}`);
             manager.sendFile(fileToTransfer);
         } else {
-            console.log('No file to send');
+            logger.debug('DATA-CHANNEL', 'No file queued for transfer');
         }
     };
 
@@ -274,25 +234,25 @@ export function setupDataChannel(manager, channel, fileToSend) {
 
     channel.onbufferedamountlow = () => {
         const bufferedKB = (manager.dataChannel.bufferedAmount / 1024).toFixed(1);
-        console.log(`[DRAIN] Buffer drained to ${bufferedKB}KB, resuming if paused...`);
+        logger.debug('BUFFER', `Drained to ${bufferedKB}KB`);
         if (manager.sendState.paused && manager.sendState.file && manager.sendState.offset < manager.sendState.file.size) {
-            console.log(`[DRAIN] ✓ Resuming from offset ${manager.sendState.offset}/${manager.sendState.file.size}`);
+            logger.info('TRANSFER', `Resuming from ${manager.sendState.offset}/${manager.sendState.file.size} bytes`);
             manager.sendState.paused = false;
-            manager.continueSendFile().catch(e => console.error('[DRAIN] Error resuming:', e));
+            manager.continueSendFile().catch(e => logger.error('TRANSFER', 'Resume error:', e.message));
         }
     };
 
     channel.onclose = () => {
-        if (manager.dataChannelOpenTimeout) {
-            clearTimeout(manager.dataChannelOpenTimeout);
-            manager.dataChannelOpenTimeout = null;
-        }
-        console.warn('✗ Data channel closed');
-        console.log('Final states:');
-        console.log('  - Channel readyState:', channel.readyState);
-        console.log('  - Peer connection state:', manager.peerConnection?.connectionState);
-        console.log('  - ICE connection state:', manager.peerConnection?.iceConnectionState);
-        console.log('  - Transfer offset:', manager.sendState.offset, 'of', manager.sendState.file?.size || 'unknown');
+        clearTimer(manager.dataChannelOpenTimeout);
+        manager.dataChannelOpenTimeout = null;
+        
+        logger.warn('DATA-CHANNEL', 'Channel closed');
+        logger.logState('DATA-CHANNEL', {
+            channelState: channel.readyState,
+            peerState: manager.peerConnection?.connectionState,
+            iceState: manager.peerConnection?.iceConnectionState,
+            transferProgress: `${manager.sendState.offset}/${manager.sendState.file?.size || 0}`
+        });
         manager.ui.updateStatus('Connection closed');
 
         // If we had a working connection and the peer closed their tab, proactively reset so
@@ -317,20 +277,18 @@ export function setupDataChannel(manager, channel, fileToSend) {
     };
 
     channel.onerror = (error) => {
-        if (manager.dataChannelOpenTimeout) {
-            clearTimeout(manager.dataChannelOpenTimeout);
-            manager.dataChannelOpenTimeout = null;
-        }
-        console.error('✗ Data channel error event:', error);
-        console.error('Channel details:');
-        console.error('  - readyState:', channel.readyState);
-        console.error('  - bufferedAmount:', channel.bufferedAmount);
-        console.error('  - label:', channel.label);
-        console.error('Peer connection details:');
-        console.error('  - connectionState:', manager.peerConnection?.connectionState);
-        console.error('  - iceConnectionState:', manager.peerConnection?.iceConnectionState);
-        console.error('  - iceGatheringState:', manager.peerConnection?.iceGatheringState);
-        const errorMsg = error && error.message ? error.message : 'Unknown error';
+        clearTimer(manager.dataChannelOpenTimeout);
+        manager.dataChannelOpenTimeout = null;
+        
+        const errorMsg = error?.message || 'Unknown error';
+        logger.error('DATA-CHANNEL', `Error: ${errorMsg}`);
+        logger.logState('DATA-CHANNEL', {
+            readyState: channel.readyState,
+            bufferedAmount: channel.bufferedAmount,
+            label: channel.label,
+            peerState: manager.peerConnection?.connectionState,
+            iceState: manager.peerConnection?.iceConnectionState
+        });
         manager.ui.showError(`Data channel error: ${errorMsg}. State: ${channel.readyState}`);
     };
 }

@@ -1,4 +1,5 @@
 import { formatBytes } from './utils.js';
+import { logger, setLogLevel } from './utils/logger.js';
 
 export class UIManager {
     constructor() {
@@ -196,8 +197,7 @@ export class UIManager {
     }
 
     showWarning(message) {
-        console.warn(message);
-        // Could also show a toast or banner instead of console
+        logger.warn('UI', message);
     }
 
     showConnectionPrompt(peerId, onAccept, onReject) {
@@ -224,12 +224,11 @@ export class UIManager {
     }
 
     cleanup() {
-        // Remove all tracked event listeners
         this.eventListeners.forEach(({ element, event, handler }) => {
             try {
                 element.removeEventListener(event, handler);
             } catch (e) {
-                console.warn('[UI] Failed to remove event listener:', e);
+                logger.warn('UI', `Failed to remove event listener: ${e.message}`);
             }
         });
         this.eventListeners = [];

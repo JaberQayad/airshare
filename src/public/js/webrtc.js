@@ -70,40 +70,19 @@ export class WebRTCManager {
             }
 
             cleanup() {
-                // Clear all tracked timers
-                this.timers.forEach(timer => {
-                    try {
-                        clearTimeout(timer);
-                        clearInterval(timer);
-                    } catch (e) {
-                        console.warn('[CLEANUP] Failed to clear timer:', e);
-                    }
-                });
-                this.timers.clear();
+            clearTimers(this.timers);
+            clearTimer(this.dataChannelOpenTimeout, () => { this.dataChannelOpenTimeout = null; });
 
-                // Clear data channel open timeout
-                if (this.dataChannelOpenTimeout) {
-                    clearTimeout(this.dataChannelOpenTimeout);
-                    this.dataChannelOpenTimeout = null;
+            if (this.receiveState.streamWriter) {
+                try {
+                    this.receiveState.streamWriter.close();
+                } catch (e) {
+                    logger.warn('CLEANUP', `Stream writer close failed: ${e.message}`);
                 }
+            }
 
-                // Close stream writer if open
-                if (this.receiveState.streamWriter) {
-                    try {
-                        this.receiveState.streamWriter.close();
-                    } catch (e) {
-                        console.warn('[CLEANUP] Failed to close stream writer:', e);
-                    }
-                }
-
-                // Clear chunks from memory
-                this.receiveState.chunks.clear();
-                
-                // Clear stats
-                this.stats.speedSamples = [];
-                
-                // Reset connection
-                this.resetConnection();
+            this.receiveState.chunks.clear();
+            this.stats.speedSamples = [];
             }
 
             // Connection

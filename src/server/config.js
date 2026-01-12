@@ -173,6 +173,11 @@ const config = {
     umamiId: sanitizeString(process.env.UMAMI_ID, 100),
     trustProxy: trustProxy,
 
+    // Client logging (for production debugging)
+    logLevel: ['DEBUG', 'INFO', 'WARN', 'ERROR', 'NONE'].includes(process.env.CLIENT_LOG_LEVEL?.toUpperCase()) 
+        ? process.env.CLIENT_LOG_LEVEL.toUpperCase() 
+        : (process.env.NODE_ENV === 'production' ? 'WARN' : 'INFO'),
+
     // Security
     corsOrigins: corsOrigins
 };

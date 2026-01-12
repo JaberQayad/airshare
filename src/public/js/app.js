@@ -1,5 +1,7 @@
 import { UIManager } from './ui.js';
 import { WebRTCManager } from './webrtc.js';
+import { logger, setLogLevel } from './utils/logger.js';
+import { clearTimer, clearTimers } from './utils/cleanup.js';
 
 const SESSION_KEY = 'airshare.session.v1';
 
@@ -41,7 +43,7 @@ const socket = io({
     reconnectionDelayMax: 5000,
     timeout: 20000
 });
-console.log('[APP] Socket.IO client initialized');
+logger.debug('APP', 'Socket.IO client initialized');
 
 const ui = new UIManager();
 let webrtcManager;
@@ -61,50 +63,31 @@ let keepAliveInterval = null;
 const appTimers = new Set();
 
 function cleanupApp() {
-    console.log('[APP] Cleaning up resources...');
+    logger.debug('APP', 'Cleaning up resources');
     
-    // Clear all tracked timers
-    appTimers.forEach(timer => {
-        try {
-            clearTimeout(timer);
-            clearInterval(timer);
-        } catch (e) {
-            console.warn('[APP] Failed to clear timer:', e);
-        }
-    });
-    appTimers.clear();
+    clearTimers(appTimers);
+    clearTimer(senderRestoreTimer, () => { senderRestoreTimer = null; });
+    clearTimer(keepAliveInterval, () => { keepAliveInterval = null; });
     
-    // Clear specific timers
-    if (senderRestoreTimer) {
-        clearTimeout(senderRestoreTimer);
-        senderRestoreTimer = null;
-    }
-    if (keepAliveInterval) {
-        clearInterval(keepAliveInterval);
-        keepAliveInterval = null;
-    }
-    
-    // Cleanup WebRTC manager
     if (webrtcManager) {
         try {
             webrtcManager.cleanup();
         } catch (e) {
-            console.warn('[APP] Failed to cleanup WebRTC manager:', e);
+            logger.warn('APP', 'WebRTC cleanup failed:', e.message);
         }
     }
     
-    // Cleanup UI
     try {
         ui.cleanup();
     } catch (e) {
-        console.warn('[APP] Failed to cleanup UI:', e);
+        logger.warn('APP', 'UI cleanup failed:', e.message);
     }
     
-    // Disconnect socket
     try {
         socket.disconnect();
+        logger.debug('APP', 'Socket disconnected');
     } catch (e) {
-        console.warn('[APP] Failed to disconnect socket:', e);
+        logger.warn('APP', 'Socket disconnect failed:', e.message);
     }
 }
 
@@ -183,25 +166,23 @@ function tryRestoreRoomMembership(reason) {
 
 // Socket connection events
 socket.on('connect', () => {
-    console.log('[APP] Connected to server, socket ID:', socket.id);
+    logger.info('APP', `Connected to server: ${socket.id}`);
     ui.updateStatus('Connected');
-    // If we were previously in a room, ensure we are back in it after reconnect.
     tryRestoreRoomMembership('connected');
 });
 
 socket.on('disconnect', (reason) => {
-    console.warn('[APP] Disconnected from server:', reason);
+    logger.warn('APP', `Disconnected: ${reason}`);
     ui.updateStatus('Disconnected from server');
 });
 
 socket.on('connect_error', (error) => {
-    console.error('[APP] Connection error:', error);
-    // Avoid spamming alerts during transient reconnect attempts.
+    logger.error('APP', `Connection error: ${error.message}`);
     ui.updateStatus('Connection issue... retrying');
 });
 
 socket.on('reconnect', (attempt) => {
-    console.log('[APP] Reconnected after attempts:', attempt);
+    logger.info('APP', `Reconnected after ${attempt} attempts`);
     tryRestoreRoomMembership('reconnected');
 });
 
@@ -213,17 +194,23 @@ socket.on('reconnect_attempt', (attempt) => {
 fetch('/config')
     .then(response => response.json())
     .then(config => {
-        console.log('[APP] Config loaded:', {
-            iceServersCount: config.iceServers?.length,
+        // Apply log level from config (defaults to INFO if not set)
+        if (config.logLevel) {
+            setLogLevel(config.logLevel);
+        }
+        
+        logger.info('APP', 'Config loaded:', {
+            iceServers: config.iceServers?.length,
             port: config.port,
-            chunkSize: config.defaultChunkSize
+            chunkSize: config.defaultChunkSize,
+            logLevel: config.logLevel || 'INFO'
         });
         ui.applyConfig(config);
         webrtcManager = new WebRTCManager(socket, config, ui);
         initializeApp();
     })
     .catch(err => {
-        console.error('[APP] Failed to load config:', err);
+        logger.error('APP', `Config load failed: ${err.message}`);
         ui.showError('Failed to load configuration: ' + err.message);
     });
 
@@ -306,23 +293,24 @@ function initializeApp() {
 
     // Socket Events
     socket.on('room-joined', (room) => {
-        console.log('[APP] Room joined as receiver, roomId:', room.roomId);
-        console.log('[APP] Setting up peer connection as receiver');
+        logger.info('APP', `Joined room as receiver: ${room.roomId}`);
         currentRoomId = room.roomId;
 
-        // If this join was part of sender restore, keep initiator behavior.
         if (pendingJoinRole === 'sender') {
             pendingJoinRole = null;
             clearTimeout(senderRestoreTimer);
             if (webrtcManager && selectedFile) {
+                logger.debug('APP', 'Sender room restored');
                 ui.updateStatus('Room restored. Waiting for peer...');
                 webrtcManager.setupPeerConnection(room.roomId, true, selectedFile);
             } else {
+                logger.warn('APP', 'Sender room restored but no file selected');
                 ui.updateStatus('Reconnected. Select a file again to share.');
             }
             return;
         }
 
+        logger.debug('APP', 'Setting up as receiver');
         pendingJoinRole = null;
         saveSession({ mode: 'receiver', roomId: room.roomId });
         webrtcManager.setupPeerConnection(room.roomId, false);
@@ -335,12 +323,12 @@ function initializeApp() {
     });
 
     socket.on('room-not-found', (payload) => {
-        console.error('[APP] Room not found or expired', payload);
+        logger.error('APP', 'Room not found or expired:', payload);
 
-        // Sender restore: recreate the room so the existing link can work again.
         if (pendingJoinRole === 'sender' && currentRoomId && !isReceiverMode()) {
             clearTimeout(senderRestoreTimer);
             pendingJoinRole = null;
+            logger.debug('APP', 'Recreating expired sender room');
             ui.updateStatus('Room expired. Recreating...');
             socket.emit('create-room', currentRoomId);
             if (webrtcManager && selectedFile) {
@@ -352,7 +340,7 @@ function initializeApp() {
             return;
         }
 
-        // Receiver: redirect home.
+        logger.warn('APP', 'Receiver room not found, redirecting home');
         ui.showError('Room not found or expired.');
         try { sessionStorage.removeItem(SESSION_KEY); } catch {}
         window.location.href = '/';
@@ -379,9 +367,8 @@ function initializeApp() {
     socket.on('peer-joined', (data) => {
         const isSender = webrtcManager.isInitiator;
         if (isSender) {
-            // If the peer socket id changed (refresh/reconnect), allow a fresh offer.
-            // This avoids getting stuck due to the per-room offer guard.
             if (data?.peerId && data.peerId !== lastJoinedPeerId) {
+                logger.debug('APP', `New peer ${data.peerId} (previous: ${lastJoinedPeerId})`);
                 lastJoinedPeerId = data.peerId;
                 offerCreatedForRoom = null;
             }
@@ -391,40 +378,47 @@ function initializeApp() {
                 webrtcManager.lifecycle.peerJoinedAt = Date.now();
             } catch {}
 
-            // Create an offer when a peer actually joins the room.
-            // Note: peers may join via the approval flow (pendingAcceptedPeerId set) or via direct join-room
-            // (e.g. refresh/restore). In both cases we must negotiate, otherwise ICE stays "new" forever.
             const isExpectedApprovedPeer = pendingAcceptedPeerId && data.peerId === pendingAcceptedPeerId;
             const isDirectJoinOrRestore = !pendingAcceptedPeerId;
             const shouldCreateOffer = isExpectedApprovedPeer || isDirectJoinOrRestore;
 
-            // Guard to avoid spamming renegotiation if multiple peer-joined events arrive.
             if (shouldCreateOffer && offerCreatedForRoom !== currentRoomId) {
+                logger.info('APP', `Creating offer for peer: ${data.peerId}`);
                 offerCreatedForRoom = currentRoomId;
                 pendingAcceptedPeerId = null;
                 ui.updateStatus('Peer joined! Creating offer...');
-                // Small delay to allow receiver to initialize its peer connection after room-joined.
                 setTimeout(() => {
                     webrtcManager.createOffer();
                 }, 600);
             } else {
+                logger.debug('APP', 'Peer joined (offer already created)');
                 ui.updateStatus('Peer joined!');
             }
         } else {
+            logger.info('APP', 'Peer joined as receiver');
             ui.updateStatus('Connected. Receiving...');
         }
     });
 
-    socket.on('offer', (data) => webrtcManager.handleSignal('offer', data));
-    socket.on('answer', (data) => webrtcManager.handleSignal('answer', data));
-    socket.on('candidate', (data) => webrtcManager.handleSignal('candidate', data));
+    socket.on('offer', (data) => {
+        logger.debug('APP', 'Received offer signal');
+        webrtcManager.handleSignal('offer', data);
+    });
+    socket.on('answer', (data) => {
+        logger.debug('APP', 'Received answer signal');
+        webrtcManager.handleSignal('answer', data);
+    });
+    socket.on('candidate', (data) => {
+        logger.debug('APP', 'Received ICE candidate');
+        webrtcManager.handleSignal('candidate', data);
+    });
 
-    // Error handling from server
     socket.on('app-error', (data) => {
         const message = data?.message || 'Unknown error';
+        logger.error('APP', `Server error: ${message}`);
 
-        // If sender is restoring and the room already exists, just join it.
         if (pendingJoinRole === 'sender' && /room already exists/i.test(message) && currentRoomId) {
+            logger.debug('APP', 'Room exists, joining instead');
             socket.emit('join-room', currentRoomId);
             return;
         }
@@ -433,6 +427,7 @@ function initializeApp() {
     });
 
     socket.on('peer-rejected', (data) => {
+        logger.warn('APP', 'Peer rejected connection');
         ui.showError('Peer rejected the connection');
     });
 

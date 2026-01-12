@@ -1,6 +1,8 @@
 import { calculateCRC32 } from '../crc32.js';
 import { generateSecureIdHex } from './ids.js';
 import { updateProgressStats } from './progress.js';
+import { logger } from '../utils/logger.js';
+import { clearTimer } from '../utils/cleanup.js';
 
 export async function sendFile(manager, file) {
     manager.sendState.file = file;
@@ -15,7 +17,7 @@ export async function sendFile(manager, file) {
     manager.ui.showTransfer(file.name, file.size);
 
     if (manager.dataChannel.readyState !== 'open') {
-        console.log('[SEND] Waiting for data channel to open (current state: ' + manager.dataChannel.readyState + ')...');
+        logger.warn('SEND', `Channel not open (state: ${manager.dataChannel.readyState}), waiting...`);
 
         const channelOpenPromise = new Promise((resolve, reject) => {
             let resolved = false;
@@ -27,19 +29,19 @@ export async function sendFile(manager, file) {
                 }
             }, 100);
 
-            setTimeout(() => {
+            const timeout = setTimeout(() => {
                 if (!resolved) {
                     clearInterval(checkInterval);
-                    reject(new Error(`Data channel did not open (state: ${manager.dataChannel.readyState})`));
+                    reject(new Error(`Channel open timeout (state: ${manager.dataChannel.readyState})`));
                 }
             }, 30000);
         });
 
         try {
             await channelOpenPromise;
-            console.log('[SEND] ✓ Data channel is now open, proceeding with transfer');
+            logger.info('SEND', 'Channel opened, proceeding with transfer');
         } catch (e) {
-            console.error('[SEND] ✗ Timeout waiting for channel to open:', e.message);
+            logger.error('SEND', 'Channel open timeout:', e.message);
             throw e;
         }
     }
@@ -59,20 +61,24 @@ export async function sendFile(manager, file) {
     try {
         if (manager.dataChannel.readyState === 'open') {
             manager.dataChannel.send(JSON.stringify(metadata));
-            console.log('[SEND] ✓ Metadata sent, starting file transfer');
+            logger.info('SEND', `Metadata sent: ${file.name} (${totalChunks} chunks)`);
             await continueSendFile(manager);
         } else {
-            throw new Error(`Cannot send metadata - data channel state is "${manager.dataChannel.readyState}". Peer may have disconnected.`);
+            throw new Error(`Cannot send - channel state: ${manager.dataChannel.readyState}`);
         }
     } catch (e) {
-        console.error('[SEND] ✗ Transfer error:', e.message);
+        logger.error('SEND', 'Transfer error:', e.message);
         manager.ui.showError(`Transfer failed: ${e.message}`);
     }
 }
 
 export async function continueSendFile(manager) {
     if (!manager.sendState.file || !manager.dataChannel || manager.dataChannel.readyState !== 'open') {
-        console.log('[SEND] Cannot continue: file=' + !!manager.sendState.file + ', channel=' + !!manager.dataChannel + ', ready=' + (manager.dataChannel?.readyState === 'open'));
+        logger.warn('SEND', 'Cannot continue transfer', {
+            hasFile: !!manager.sendState.file,
+            hasChannel: !!manager.dataChannel,
+            channelOpen: manager.dataChannel?.readyState === 'open'
+        });
         return;
     }
 
@@ -88,7 +94,7 @@ export async function continueSendFile(manager) {
         const bufferedKB = manager.dataChannel.bufferedAmount / 1024;
 
         if (manager.dataChannel.bufferedAmount > highWater) {
-            console.log(`[BACKPRESSURE] 🛑 CRITICAL: Buffer ${bufferedKB.toFixed(1)}KB > ${(highWater / 1024).toFixed(0)}KB! Pausing immediately.`);
+            logger.warn('BACKPRESSURE', `Buffer critical: ${bufferedKB.toFixed(1)}KB > ${(highWater / 1024).toFixed(0)}KB, pausing`);
             manager.sendState.paused = true;
             return;
         }
@@ -100,7 +106,7 @@ export async function continueSendFile(manager) {
             const slice = file.slice(manager.sendState.offset, end);
             buffer = await readFileSliceAsBuffer(slice);
         } catch (e) {
-            console.error('[READ] Failed to read chunk:', e);
+            logger.error('READ', 'Failed to read chunk:', e.message);
             manager.ui.showError(`Read error: ${e.message}`);
             break;
         }
@@ -112,12 +118,12 @@ export async function continueSendFile(manager) {
 
         try {
             if (manager.dataChannel.readyState !== 'open') {
-                console.log('[SEND] Channel closed at offset:', manager.sendState.offset);
+                logger.warn('SEND', `Channel closed at offset ${manager.sendState.offset}`);
                 break;
             }
             manager.dataChannel.send(chunkWithCrc.buffer);
         } catch (e) {
-            console.error('[SEND] Send failed:', e.message);
+            logger.error('SEND', 'Send failed:', e.message);
             manager.ui.showError(`Send failed: ${e.message}`);
             break;
         }
@@ -134,13 +140,13 @@ export async function continueSendFile(manager) {
                 if (currentBatchSize < 20) {
                     currentBatchSize = Math.min(20, currentBatchSize + 2);
                     yieldTimeMs = Math.max(10, yieldTimeMs - 5);
-                    console.log(`[ADAPT] ⚡ Buffer low, speeding up: batch=${currentBatchSize}, yield=${yieldTimeMs}ms`);
+                    logger.debug('ADAPT', `Speeding up: batch=${currentBatchSize}, yield=${yieldTimeMs}ms`);
                 }
             } else if (manager.dataChannel.bufferedAmount > targetBuffer) {
                 if (currentBatchSize > 1) {
                     currentBatchSize = Math.max(1, Math.floor(currentBatchSize * 0.7));
                     yieldTimeMs = Math.min(200, yieldTimeMs + 20);
-                    console.log(`[ADAPT] 🐌 Buffer rising (${bufferedKB.toFixed(1)}KB), slowing: batch=${currentBatchSize}, yield=${yieldTimeMs}ms`);
+                    logger.debug('ADAPT', `Slowing down: buffer=${bufferedKB.toFixed(1)}KB, batch=${currentBatchSize}, yield=${yieldTimeMs}ms`);
                 }
             }
 
@@ -149,7 +155,7 @@ export async function continueSendFile(manager) {
     }
 
     if (manager.sendState.offset >= file.size) {
-        console.log('[SEND] ✓ Complete! Sent', manager.sendState.offset, 'bytes');
+        logger.info('SEND', `Transfer complete: ${manager.sendState.offset} bytes sent`);
         manager.lifecycle.transferComplete = true;
         manager.sendState.batchSize = currentBatchSize;
         manager.sendState.yieldTimeMs = yieldTimeMs;

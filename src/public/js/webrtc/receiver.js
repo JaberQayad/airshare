@@ -1,6 +1,7 @@
 import { calculateCRC32, crc32ToHex } from '../crc32.js';
 import { formatBytes, shouldUseStreaming, isMobileDevice, getAvailableMemory } from '../utils.js';
 import { updateProgressStats } from './progress.js';
+import { logger } from '../utils/logger.js';
 
 export async function handleMessage(manager, event) {
     const data = event.data;
@@ -38,13 +39,13 @@ export async function initializeReceiver(manager, metadata) {
         if (await initializeStreaming(manager, metadata)) {
             manager.receiveState.useStreaming = true;
             const deviceInfo = isMobileDevice() ? 'mobile' : 'desktop';
-            console.log(`[MEMORY] Using streaming mode for ${formatBytes(metadata.size)} file on ${deviceInfo} device (${getAvailableMemory()}MB RAM)`);
+            logger.info('MEMORY', `Streaming enabled for ${formatBytes(metadata.size)} on ${deviceInfo} (${getAvailableMemory()}MB RAM)`);
         } else {
             manager.receiveState.useStreaming = false;
         }
     } else {
         manager.receiveState.useStreaming = false;
-        console.log(`[MEMORY] Using in-memory mode for ${formatBytes(metadata.size)} file`);
+        logger.debug('MEMORY', `In-memory mode for ${formatBytes(metadata.size)}`);
     }
 
     manager.stats.startTime = Date.now();
