@@ -3,6 +3,8 @@
  * Loads and validates environment variables for the AirShare application
  */
 
+const dnsSync = require('dns-sync');
+
 // Validation helper functions
 function validatePositiveInt(value, defaultValue, min = 0, max = Number.MAX_SAFE_INTEGER) {
     const parsed = parseInt(value, 10);
@@ -15,6 +17,25 @@ function validatePositiveInt(value, defaultValue, min = 0, max = Number.MAX_SAFE
 function sanitizeString(value, maxLength = 1000) {
     if (typeof value !== 'string') return '';
     return value.substring(0, maxLength).trim();
+}
+
+// Check if string is IP address or CIDR
+function isIPOrCIDR(str) {
+    return /^(?:(?:[0-9]{1,3}\.){3}[0-9]{1,3}(?:\/[0-9]{1,2})?|[a-fA-F0-9:]+(?:\/[0-9]{1,3})?)$/.test(str);
+}
+
+// Resolve domain to IP using dns-sync package
+function resolveDomain(domain) {
+    try {
+        const ip = dnsSync.resolve(domain);
+        if (ip) {
+            console.log(`[CONFIG] Resolved "${domain}" -> ${ip}`);
+            return ip;
+        }
+    } catch (err) {
+        console.warn(`[CONFIG] Failed to resolve "${domain}": ${err.message}`);
+    }
+    return null;
 }
 
 // Robust parsing for ICE_SERVERS
@@ -59,7 +80,7 @@ if (iceServersEnv) {
 }
 
 // Parse TRUSTED_DOMAINS environment variable
-// Support numbers (hop count), booleans (all/none), or IP addresses/CIDR (NOT domain names)
+// Support numbers (hop count), booleans (all/none), IP addresses/CIDR, AND domain names (resolved to IPs)
 let trustProxy = true; // Default to true for Docker-friendly behavior
 if (process.env.TRUSTED_DOMAINS) {
     const val = process.env.TRUSTED_DOMAINS.trim();
@@ -74,16 +95,30 @@ if (process.env.TRUSTED_DOMAINS) {
         if (!isNaN(num)) {
             trustProxy = num;
         } else {
-            // Validate that it looks like an IP address or CIDR notation
-            // IP format: xxx.xxx.xxx.xxx or CIDR: xxx.xxx.xxx.xxx/xx or IPv6
-            const isValidIPFormat = /^(?:(?:[0-9]{1,3}\.){3}[0-9]{1,3}(?:\/[0-9]{1,2})?|[a-fA-F0-9:]+(?:\/[0-9]{1,3})?)$/.test(val);
+            // Handle comma-separated values (domains, IPs, CIDR)
+            const items = val.split(',').map(s => s.trim()).filter(Boolean);
+            const resolved = [];
             
-            if (isValidIPFormat) {
-                trustProxy = val;
-            } else {
-                // Invalid format - domain names are NOT supported by Express trust proxy
-                console.warn(`[CONFIG] Invalid TRUSTED_DOMAINS value: "${val}". Expected: number, true/false, or IP address/CIDR notation (e.g., "10.0.0.1", "192.168.0.0/16"). Domain names are NOT supported. Falling back to default (true).`);
+            for (const item of items) {
+                if (isIPOrCIDR(item)) {
+                    // Already an IP or CIDR - use as-is
+                    resolved.push(item);
+                } else {
+                    // Try to resolve as domain name
+                    const ip = resolveDomain(item);
+                    if (ip) {
+                        resolved.push(ip);
+                    }
+                }
+            }
+            
+            if (resolved.length === 0) {
+                console.warn(`[CONFIG] No valid IPs/domains in TRUSTED_DOMAINS. Falling back to default (true).`);
                 trustProxy = true;
+            } else if (resolved.length === 1) {
+                trustProxy = resolved[0];
+            } else {
+                trustProxy = resolved;
             }
         }
     }
