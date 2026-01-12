@@ -21,11 +21,11 @@ docker run -d \
 Then open your browser: **http://localhost:4111**
 
 ### Behind a Reverse Proxy?
-If you're running behind Nginx/Apache, add `TRUST_PROXY`:
+If you're running behind Nginx/Apache, add `TRUSTED_DOMAINS`:
 ```bash
 docker run -d \
   -p 4111:3000 \
-  -e TRUST_PROXY=1 \
+  -e TRUSTED_DOMAINS=1 \
   --name airshare \
   --restart unless-stopped \
   ghcr.io/jaberio/airshare:latest
@@ -64,7 +64,7 @@ services:
       MAX_IN_MEMORY_SIZE: 209715200      # Stream files >200MB to disk
       MAX_PEERS_PER_ROOM: 2              # 1 sender + 1 receiver
       ROOM_TTL_MS: 1800000               # Clean up abandoned rooms after 30 min
-      TRUST_PROXY: 1                     # If behind reverse proxy
+      TRUSTED_DOMAINS: "trusted.domain.com"  # If behind reverse proxy
 ```
 
 See [Configuration Guide](./configuration.md) for all available options.
@@ -297,7 +297,7 @@ Check that enterprise features are active:
 | "Cannot GET /" errors | Check server started successfully, check logs |
 | Connection fails between peers | Verify ICE servers reachable (firewall/NAT), check browser console |
 | "Room is full" error | Verify `MAX_PEERS_PER_ROOM=2`, check for zombie connections |
-| Rate limiting blocks you | Set `TRUST_PROXY=1` if behind reverse proxy |
+| Rate limiting blocks you | Set `TRUSTED_DOMAINS=1` if behind reverse proxy |
 | Out of memory on large files | Set `MAX_IN_MEMORY_SIZE` lower or use streaming-capable browser |
 
 ---

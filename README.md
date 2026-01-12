@@ -130,19 +130,17 @@ docker-compose up -d
 - `UMAMI_ID` - Umami analytics ID (optional)
 
 ### Reverse Proxy Support
-- `TRUST_PROXY` - Enable trust proxy for correct client IP detection when running behind a reverse proxy (nginx, Apache, etc.)
+- `TRUSTED_DOMAINS` - Enable trust proxy for correct client IP detection when running behind a reverse proxy (nginx, Apache, etc.)
   - **Not set** (default): Trust proxy disabled - safe for direct deployments
-  - `1` - Trust 1 proxy hop
-  - `2` - Trust 2 proxy hops
-  - `true` - Trust all proxies (use with caution in controlled environments)
+  - `1`, `2`, `"trusted.domain.com"`, etc. - See configuration guide for more.
 
-**When to use**: Set `TRUST_PROXY` when your application is behind a reverse proxy to properly handle rate limiting and client IP detection. This resolves `ERR_ERL_UNEXPECTED_X_FORWARDED_FOR` errors.
+**When to use**: Set `TRUSTED_DOMAINS` when your application is behind a reverse proxy to properly handle rate limiting and client IP detection. This resolves `ERR_ERL_UNEXPECTED_X_FORWARDED_FOR` errors.
 
 Example with Docker:
 ```bash
 docker run -d \
   -p 4111:3000 \
-  -e TRUST_PROXY=1 \
+  -e TRUSTED_DOMAINS="trusted.domain.com" \
   --name airshare \
   --restart unless-stopped \
   ghcr.io/jaberio/airshare:latest
@@ -151,8 +149,24 @@ docker run -d \
 Example with Docker Compose - uncomment in `docker-compose.yml`:
 ```yaml
 environment:
-  TRUST_PROXY: 1
+  TRUSTED_DOMAINS: "trusted.domain.com, another.trusted.domain.com"
 ```
+
+---
+
+## � Security
+
+AirShare implements multiple security layers:
+
+- **🛡️ Rate Limiting**: 100 req/15min per IP (HTTP) + 10 events/sec (WebSocket)
+- **🔐 Input Validation**: All config values validated with min/max bounds
+- **🚫 XSS Prevention**: Strict CSP headers, sanitized inputs, no innerHTML for user data
+- **🔒 Secure Headers**: Helmet.js with frameguard, noSniff, XSS filter
+- **👤 Non-root Docker**: Runs as unprivileged user (nodejs:1001)
+- **🎯 Config Filtering**: `/config` endpoint only exposes client-safe values
+- **📝 Audit Logging**: All security events logged (rate limits, invalid inputs)
+
+**See [SECURITY.md](SECURITY.md) for full security documentation and reporting vulnerabilities.**
 
 ---
 
@@ -160,6 +174,7 @@ environment:
 - **Frontend**: HTML5, CSS3, Vanilla JavaScript (ES Modules)
 - **Backend**: Node.js, Express
 - **Real-time**: Socket.io (Signaling), WebRTC (Data Transfer)
+- **Security**: Helmet.js, express-rate-limit, input validation
 - **CI/CD**: GitHub Actions, GHCR.io
 
 ---

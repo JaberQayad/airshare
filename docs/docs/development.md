@@ -413,7 +413,7 @@ module.exports = {
 - [ ] **Progress display**: Shows speed + ETA, updates smoothly
 - [ ] **Dark mode**: Theme toggle works on both light & dark
 - [ ] **Mobile**: Works on iOS/Android browsers
-- [ ] **Behind proxy**: TRUST_PROXY=1 enables correct rate limiting
+- [ ] **Behind proxy**: TRUSTED_DOMAINS=1 enables correct rate limiting
 
 ### Browser Compatibility
 
@@ -535,7 +535,7 @@ DEBUG=socket.io npm start
 | File transfer hangs | Check Network tab (DevTools), verify backpressure logic |
 | UI not updating | Check browser console, verify event listeners, try hard refresh |
 | Memory leak | Heap snapshot comparison (DevTools Memory tab) |
-| Rate limiting blocks | Set TRUST_PROXY=1, verify X-Forwarded-For headers |
+| Rate limiting blocks | Set TRUSTED_DOMAINS=1, verify X-Forwarded-For headers |
 
 ---
 

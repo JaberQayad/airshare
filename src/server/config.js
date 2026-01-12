@@ -3,6 +3,20 @@
  * Loads and validates environment variables for the AirShare application
  */
 
+// Validation helper functions
+function validatePositiveInt(value, defaultValue, min = 0, max = Number.MAX_SAFE_INTEGER) {
+    const parsed = parseInt(value, 10);
+    if (isNaN(parsed) || parsed < min || parsed > max) {
+        return defaultValue;
+    }
+    return parsed;
+}
+
+function sanitizeString(value, maxLength = 1000) {
+    if (typeof value !== 'string') return '';
+    return value.substring(0, maxLength).trim();
+}
+
 // Robust parsing for ICE_SERVERS
 let iceServers;
 const iceServersEnv = process.env.ICE_SERVERS;
@@ -44,19 +58,24 @@ if (iceServersEnv) {
     ];
 }
 
-// Parse TRUST_PROXY environment variable
-// Default to true if running in Docker or behind a proxy
-let trustProxy = true;
-if (process.env.TRUST_PROXY) {
-    const trustProxyValue = process.env.TRUST_PROXY.toLowerCase();
-    if (trustProxyValue === 'false') {
+// Parse TRUSTED_DOMAINS environment variable
+// Support numbers (hop count), booleans (all/none), or strings (specific IPs/subnets/domains)
+let trustProxy = true; // Default to true for Docker-friendly behavior
+if (process.env.TRUSTED_DOMAINS) {
+    const val = process.env.TRUSTED_DOMAINS.trim();
+    const lowerVal = val.toLowerCase();
+    
+    if (lowerVal === 'false') {
         trustProxy = false;
-    } else if (trustProxyValue === 'true') {
+    } else if (lowerVal === 'true') {
         trustProxy = true;
     } else {
-        const num = parseInt(process.env.TRUST_PROXY, 10);
-        if (!isNaN(num) && (num === 1 || num === 2)) {
+        const num = parseInt(val, 10);
+        if (!isNaN(num)) {
             trustProxy = num;
+        } else {
+            // Support comma-separated strings or single IP/subnet/domain strings
+            trustProxy = val;
         }
     }
 }
@@ -76,31 +95,31 @@ if (corsOriginsEnv) {
 }
 
 const config = {
-    port: process.env.PORT || 3000,
-    maxFileSize: parseInt(process.env.MAX_FILE_SIZE) || 2147483648, // Default 2GB
+    port: validatePositiveInt(process.env.PORT, 3000, 1, 65535),
+    maxFileSize: validatePositiveInt(process.env.MAX_FILE_SIZE, 2147483648, 0, Number.MAX_SAFE_INTEGER), // Default 2GB
     iceServers: iceServers,
     
     // Chunk and buffer settings
-    defaultChunkSize: parseInt(process.env.DEFAULT_CHUNK_SIZE) || 131072, // 128KB
-    minChunkSize: parseInt(process.env.MIN_CHUNK_SIZE) || 32768, // 32KB
-    maxChunkSize: parseInt(process.env.MAX_CHUNK_SIZE) || 262144, // 256KB
-    bufferHighWater: parseInt(process.env.BUFFER_HIGH_WATER) || 1048576, // 1MB
-    bufferLowWater: parseInt(process.env.BUFFER_LOW_WATER) || 262144, // 256KB
+    defaultChunkSize: validatePositiveInt(process.env.DEFAULT_CHUNK_SIZE, 131072, 1024, 10485760), // 128KB (1KB-10MB range)
+    minChunkSize: validatePositiveInt(process.env.MIN_CHUNK_SIZE, 32768, 1024, 1048576), // 32KB (1KB-1MB range)
+    maxChunkSize: validatePositiveInt(process.env.MAX_CHUNK_SIZE, 262144, 1024, 10485760), // 256KB (1KB-10MB range)
+    bufferHighWater: validatePositiveInt(process.env.BUFFER_HIGH_WATER, 1048576, 1024, 104857600), // 1MB (1KB-100MB range)
+    bufferLowWater: validatePositiveInt(process.env.BUFFER_LOW_WATER, 262144, 1024, 104857600), // 256KB (1KB-100MB range)
     
     // Receiver streaming
-    maxInMemorySize: parseInt(process.env.MAX_IN_MEMORY_SIZE) || 209715200, // 200MB - files larger use streaming
+    maxInMemorySize: validatePositiveInt(process.env.MAX_IN_MEMORY_SIZE, 209715200, 0, Number.MAX_SAFE_INTEGER), // 200MB - files larger use streaming
     
     // Signaling
-    maxSignalPayloadBytes: parseInt(process.env.MAX_SIGNAL_PAYLOAD_BYTES) || 65536, // 64KB
-    maxPeersPerRoom: parseInt(process.env.MAX_PEERS_PER_ROOM) || 2,
-    roomTtlMs: parseInt(process.env.ROOM_TTL_MS) || 1800000, // 30 minutes
+    maxSignalPayloadBytes: validatePositiveInt(process.env.MAX_SIGNAL_PAYLOAD_BYTES, 65536, 1024, 1048576), // 64KB (1KB-1MB range)
+    maxPeersPerRoom: validatePositiveInt(process.env.MAX_PEERS_PER_ROOM, 2, 2, 10),
+    roomTtlMs: validatePositiveInt(process.env.ROOM_TTL_MS, 1800000, 60000, 86400000), // 30 minutes (1min-24hr range)
     
-    // UI/branding
-    appTitle: process.env.APP_TITLE || 'AirShare',
-    themeColor: process.env.THEME_COLOR || '#6366f1',
-    donateUrl: process.env.DONATE_URL,
-    termsUrl: process.env.TERMS_URL,
-    umamiId: process.env.UMAMI_ID,
+    // UI/branding (sanitized for security)
+    appTitle: sanitizeString(process.env.APP_TITLE || 'AirShare', 100), // Max 100 chars
+    themeColor: /^#[0-9A-Fa-f]{6}$/.test(process.env.THEME_COLOR) ? process.env.THEME_COLOR : '#6366f1',
+    donateUrl: sanitizeString(process.env.DONATE_URL, 500),
+    termsUrl: sanitizeString(process.env.TERMS_URL, 500),
+    umamiId: sanitizeString(process.env.UMAMI_ID, 100),
     trustProxy: trustProxy,
 
     // Security

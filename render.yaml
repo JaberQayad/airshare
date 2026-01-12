@@ -1,7 +1,7 @@
 services:
   - type: web
     name: airshare
-    env: node
+    runtime: node
     plan: free
     buildCommand: npm ci
     startCommand: npm start

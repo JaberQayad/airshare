@@ -24,7 +24,11 @@ class Logger {
      */
     error(message, error) {
         const errorDetails = error instanceof Error 
-            ? { message: error.message, stack: error.stack }
+            ? { 
+                message: error.message, 
+                // Only log stack trace in development for security
+                ...(process.env.NODE_ENV !== 'production' && { stack: error.stack })
+            }
             : error;
         const formatted = this.formatMessage('ERROR', message, errorDetails);
         console.error(formatted);

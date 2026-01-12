@@ -188,25 +188,31 @@ Tracking ID for [Umami Analytics](https://umami.is/). Enables privacy-focused us
 
 ## Reverse Proxy Support
 
-### TRUST_PROXY
+### TRUSTED_DOMAINS
 Enable trust proxy to correctly detect client IPs when running behind Nginx, Apache, or other reverse proxies. **Required** for accurate rate limiting behind a proxy.
 
-- **Default**: Not set (disabled)
+- **Default**: `true` (trust all - optimized for Docker)
 - **Supported values**:
-  - `1` - Trust 1 proxy hop (common for Nginx/Apache)
-  - `2` - Trust 2 proxy hops (load balancer + reverse proxy)
+  - `1`, `2`, etc. - Trust N proxy hops
+  - `"trusted.domain.com"` - Trust a specific domain or IP address
   - `true` - Trust all proxies (use only in controlled environments)
+  - `false` - Trust no proxies
 - **When needed**: Set this when you see `ERR_ERL_UNEXPECTED_X_FORWARDED_FOR` errors
 
 **Example: Single Nginx Reverse Proxy**
 ```bash
-export TRUST_PROXY=1
+export TRUSTED_DOMAINS="trusted.domain.com"
 ```
 
-**Example: Docker Compose behind Nginx**
+**Example: Trusted Domain**
+```bash
+export TRUSTED_DOMAINS="airshare.internal"
+```
+
+**Example: Docker Compose**
 ```yaml
 environment:
-  TRUST_PROXY: 1
+  TRUSTED_DOMAINS: "trusted.domain.com"
 ```
 
 **Example: Nginx Configuration**
@@ -272,7 +278,7 @@ environment:
   MAX_PEERS_PER_ROOM: 2
   ROOM_TTL_MS: 1800000
   MAX_SIGNAL_PAYLOAD_BYTES: 65536
-  # TRUST_PROXY: 1  # Uncomment if behind reverse proxy
+  # TRUSTED_DOMAINS: 1  # Uncomment if behind reverse proxy
 ```
 
 ---
@@ -298,7 +304,7 @@ MAX_CHUNK_SIZE=524288
 BUFFER_HIGH_WATER=2097152          # 2MB
 BUFFER_LOW_WATER=524288
 ROOM_TTL_MS=1200000                # 20 min for faster cleanup
-TRUST_PROXY=1                       # Behind load balancer
+TRUSTED_DOMAINS=1                   # Behind load balancer
 ```
 
 ### Restricted Networks (Mobile/LTE)
@@ -322,7 +328,7 @@ BUFFER_LOW_WATER=131072             # 128KB
 | "Room is full" errors | Verify `MAX_PEERS_PER_ROOM` isn't too low (default: 2) |
 | OOM errors on large files | Lower `MAX_IN_MEMORY_SIZE` or enable File System Access API |
 | Slow transfers | Increase `DEFAULT_CHUNK_SIZE` and `MAX_CHUNK_SIZE` |
-| Rate limit blocking | Set `TRUST_PROXY` if behind reverse proxy |
+| Rate limit blocking | Set `TRUSTED_DOMAINS` if behind reverse proxy |
 | Connection fails (firewalls) | Add TURN server to `ICE_SERVERS` |
 | Memory not releasing | Check `ROOM_TTL_MS` for abandoned room cleanup |
 

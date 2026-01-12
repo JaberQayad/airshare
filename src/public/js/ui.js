@@ -211,7 +211,8 @@ export class UIManager {
         if (config.appTitle) {
             document.title = config.appTitle;
             if (this.elements.logo) {
-                this.elements.logo.innerHTML = `🚀 ${config.appTitle}`;
+                // Use textContent to prevent XSS injection via appTitle
+                this.elements.logo.textContent = `🚀 ${config.appTitle}`;
             }
         }
 

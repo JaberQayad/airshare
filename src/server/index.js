@@ -36,6 +36,9 @@ app.use(helmet({
             upgradeInsecureRequests: [],
         },
     },
+    frameguard: { action: 'deny' }, // Prevent clickjacking
+    noSniff: true, // Prevent MIME-type sniffing
+    xssFilter: true, // Enable XSS filter
 }));
 app.use(cors({ origin: config.corsOrigins }));
 
@@ -74,13 +77,49 @@ app.head('/healthz', (req, res) => {
     res.status(200).end();
 });
 
-// Config endpoint
+// Config endpoint - only expose client-safe configuration
 app.get('/config', (req, res) => {
-    res.json(config);
+    // Filter sensitive server-side configuration
+    const clientConfig = {
+        iceServers: config.iceServers,
+        defaultChunkSize: config.defaultChunkSize,
+        minChunkSize: config.minChunkSize,
+        maxChunkSize: config.maxChunkSize,
+        bufferHighWater: config.bufferHighWater,
+        bufferLowWater: config.bufferLowWater,
+        maxInMemorySize: config.maxInMemorySize,
+        maxFileSize: config.maxFileSize,
+        appTitle: config.appTitle,
+        themeColor: config.themeColor,
+        donateUrl: config.donateUrl,
+        termsUrl: config.termsUrl,
+        umamiId: config.umamiId
+    };
+    res.json(clientConfig);
 });
 
 // Initialize Socket.io
 socketHandler(io);
+
+// Global error handler - prevent information leakage
+app.use((err, req, res, next) => {
+    logger.error('Unhandled error', err);
+    
+    // Don't expose error details in production
+    const message = process.env.NODE_ENV === 'production' 
+        ? 'Internal server error' 
+        : err.message;
+    
+    res.status(500).json({ 
+        error: message,
+        ...(process.env.NODE_ENV !== 'production' && { stack: err.stack })
+    });
+});
+
+// 404 handler
+app.use((req, res) => {
+    res.status(404).json({ error: 'Not found' });
+});
 
 // Start server
 server.listen(config.port, () => {
