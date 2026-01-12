@@ -4,8 +4,12 @@
     "description": "A clean, modular peer-to-peer file transfer app",
     "main": "src/server/index.js",
     "scripts": {
-        "start": "node src/server/index.js",
-        "dev": "nodemon src/server/index.js",
+        "build:client": "esbuild src/public/js/app.js --bundle --platform=browser --format=esm --target=es2020 --sourcemap --outfile=src/public/js/bundle/app.js",
+        "build:client:min": "esbuild src/public/js/app.js --bundle --platform=browser --format=esm --target=es2020 --minify --outfile=src/public/js/bundle/app.js",
+        "dev:client": "esbuild src/public/js/app.js --bundle --platform=browser --format=esm --target=es2020 --sourcemap --outfile=src/public/js/bundle/app.js --watch",
+        "dev:server": "nodemon src/server/index.js",
+        "dev": "concurrently -n client,server -c cyan,green \"npm:dev:client\" \"npm:dev:server\"",
+        "start": "npm run build:client:min && node src/server/index.js",
         "lint": "eslint \"src/**/*.js\"",
         "format": "prettier --write \"src/**/*.js\" \"src/**/*.css\" \"src/**/*.html\" \"docs/**/*.{md,mdx,json,js,ts,tsx}\"",
         "format:check": "prettier --check \"src/**/*.js\" \"src/**/*.css\" \"src/**/*.html\""
@@ -16,10 +20,11 @@
         "express": "^4.18.2",
         "express-rate-limit": "^8.2.1",
         "helmet": "^8.1.0",
-        "socket.io": "^4.7.2",
-        "webrtc": "^1.14.1"
+        "socket.io": "^4.7.2"
     },
     "devDependencies": {
+        "concurrently": "^9.1.0",
+        "esbuild": "^0.24.2",
         "eslint": "^9.17.0",
         "nodemon": "^3.0.1",
         "prettier": "^3.4.2"

@@ -29,3 +29,6 @@ plans/
 # Docs build output
 docs/build/
 docs/.docusaurus/
+
+# Generated client bundle
+src/public/js/bundle/

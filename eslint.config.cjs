@@ -6,6 +6,7 @@ module.exports = [
       "docs/build/**",
       "docs/.docusaurus/**",
       "docs/node_modules/**",
+      "src/public/js/bundle/**",
     ],
   },
   // Server-side Node.js code
