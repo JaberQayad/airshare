@@ -81,6 +81,12 @@ export class WebRTCManager {
                 });
                 this.timers.clear();
 
+                // Clear data channel open timeout
+                if (this.dataChannelOpenTimeout) {
+                    clearTimeout(this.dataChannelOpenTimeout);
+                    this.dataChannelOpenTimeout = null;
+                }
+
                 // Close stream writer if open
                 if (this.receiveState.streamWriter) {
                     try {

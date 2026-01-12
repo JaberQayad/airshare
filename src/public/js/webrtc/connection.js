@@ -5,6 +5,12 @@ export function resetConnection(manager) {
     markIntentionalClose(manager);
     clearDisconnectTimer(manager);
 
+    // Clear any pending data channel timeout
+    if (manager.dataChannelOpenTimeout) {
+        clearTimeout(manager.dataChannelOpenTimeout);
+        manager.dataChannelOpenTimeout = null;
+    }
+
     try {
         if (manager.dataChannel) {
             try { manager.dataChannel.onopen = null; } catch {}
@@ -215,7 +221,12 @@ export function setupDataChannel(manager, channel, fileToSend) {
     channel.binaryType = 'arraybuffer';
     channel.bufferedAmountLowThreshold = manager.config.bufferLowWater || 262144;
 
-    const openTimeout = setTimeout(() => {
+    // Clear any existing timeout from previous connection attempts
+    if (manager.dataChannelOpenTimeout) {
+        clearTimeout(manager.dataChannelOpenTimeout);
+    }
+
+    manager.dataChannelOpenTimeout = setTimeout(() => {
         if (channel.readyState !== 'open') {
             // If the sender is simply waiting for a receiver to open/accept the link,
             // the channel will stay "connecting" and the PC will stay "new". That's not a failure.
@@ -240,7 +251,10 @@ export function setupDataChannel(manager, channel, fileToSend) {
     }, 30000);
 
     channel.onopen = () => {
-        clearTimeout(openTimeout);
+        if (manager.dataChannelOpenTimeout) {
+            clearTimeout(manager.dataChannelOpenTimeout);
+            manager.dataChannelOpenTimeout = null;
+        }
         console.log('✓ Data channel opened successfully');
         console.log('Channel ready state:', channel.readyState);
         console.log('Peer connection state:', manager.peerConnection?.connectionState);
@@ -269,7 +283,10 @@ export function setupDataChannel(manager, channel, fileToSend) {
     };
 
     channel.onclose = () => {
-        clearTimeout(openTimeout);
+        if (manager.dataChannelOpenTimeout) {
+            clearTimeout(manager.dataChannelOpenTimeout);
+            manager.dataChannelOpenTimeout = null;
+        }
         console.warn('✗ Data channel closed');
         console.log('Final states:');
         console.log('  - Channel readyState:', channel.readyState);
@@ -300,7 +317,10 @@ export function setupDataChannel(manager, channel, fileToSend) {
     };
 
     channel.onerror = (error) => {
-        clearTimeout(openTimeout);
+        if (manager.dataChannelOpenTimeout) {
+            clearTimeout(manager.dataChannelOpenTimeout);
+            manager.dataChannelOpenTimeout = null;
+        }
         console.error('✗ Data channel error event:', error);
         console.error('Channel details:');
         console.error('  - readyState:', channel.readyState);
