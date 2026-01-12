@@ -16,11 +16,12 @@
         "express": "^4.18.2",
         "express-rate-limit": "^8.2.1",
         "helmet": "^8.1.0",
-        "socket.io": "^4.7.2"
+        "socket.io": "^4.7.2",
+        "webrtc": "^1.14.1"
     },
     "devDependencies": {
-        "nodemon": "^3.0.1",
         "eslint": "^9.17.0",
+        "nodemon": "^3.0.1",
         "prettier": "^3.4.2"
     },
     "repository": {

@@ -1,5 +1,25 @@
 import { addRemoteCandidate as addRemoteCandidateFn } from './diagnostics.js';
 
+function ensureRemoteCandidateQueue(manager) {
+    if (!manager.remoteCandidateQueue) manager.remoteCandidateQueue = [];
+}
+
+async function flushRemoteCandidateQueue(manager) {
+    ensureRemoteCandidateQueue(manager);
+    if (!manager.peerConnection?.remoteDescription) return;
+
+    while (manager.remoteCandidateQueue.length) {
+        const candidate = manager.remoteCandidateQueue.shift();
+        try {
+            addRemoteCandidateFn(manager, candidate);
+            await manager.peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+            console.log('✓ [SIGNAL] Queued ICE candidate added');
+        } catch (e) {
+            console.warn('[SIGNAL] Failed to add queued ICE candidate:', e.message);
+        }
+    }
+}
+
 export async function handleSignal(manager, type, data) {
     if (!manager.peerConnection) {
         console.error('No peer connection when handling signal:', type);
@@ -17,6 +37,7 @@ export async function handleSignal(manager, type, data) {
                 console.log('[SIGNAL] Setting remote description (offer)...');
                 await manager.peerConnection.setRemoteDescription(new RTCSessionDescription(data.offer));
                 console.log('✓ [SIGNAL] Remote description (offer) set');
+                await flushRemoteCandidateQueue(manager);
                 console.log('[SIGNAL] Creating answer...');
                 const answer = await manager.peerConnection.createAnswer();
                 console.log('✓ [SIGNAL] Answer created, setting as local description');
@@ -35,13 +56,21 @@ export async function handleSignal(manager, type, data) {
                 console.log('[SIGNAL] Setting remote description (answer)...');
                 await manager.peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer));
                 console.log('✓ [SIGNAL] Remote description (answer) set');
+                await flushRemoteCandidateQueue(manager);
                 break;
             case 'candidate':
                 if (data.candidate) {
-                    console.log('[SIGNAL] Received ICE candidate:', {
-                        type: data.candidate.type,
-                        protocol: data.candidate.protocol
-                    });
+                    console.log('[SIGNAL] Received ICE candidate');
+                    ensureRemoteCandidateQueue(manager);
+
+                    // If remoteDescription isn't set yet, queue candidates to avoid
+                    // "Failed to add ICE candidate" race conditions.
+                    if (!manager.peerConnection.remoteDescription) {
+                        manager.remoteCandidateQueue.push(data.candidate);
+                        console.log('[SIGNAL] Remote description not set yet; queued ICE candidate');
+                        break;
+                    }
+
                     try {
                         addRemoteCandidateFn(manager, data.candidate);
                         await manager.peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));

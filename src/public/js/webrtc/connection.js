@@ -49,14 +49,19 @@ export function setupPeerConnection(manager, roomId, isInitiator, fileToSend = n
     }
     clearDisconnectTimer(manager);
 
+    // Signaling state
+    manager.remoteCandidateQueue = [];
+
     manager.roomId = roomId;
     manager.isInitiator = isInitiator;
     manager.pendingFile = fileToSend;
     manager.ui.updateStatus(isInitiator ? 'Waiting for peer...' : 'Connecting...');
 
+    const iceServers = Array.isArray(manager.config?.iceServers) ? manager.config.iceServers : [];
+
     console.log(`=== Creating peer connection (${isInitiator ? 'sender' : 'receiver'}) ===`);
-    console.log('Ice servers count:', manager.config.iceServers.length);
-    console.log('Ice servers:', JSON.stringify(manager.config.iceServers));
+    console.log('Ice servers count:', iceServers.length);
+    console.log('Ice servers:', JSON.stringify(iceServers));
 
     manager.iceCandidates = {
         local: [],
@@ -64,7 +69,7 @@ export function setupPeerConnection(manager, roomId, isInitiator, fileToSend = n
         gatheredLocal: false
     };
 
-    manager.peerConnection = new RTCPeerConnection({ iceServers: manager.config.iceServers });
+    manager.peerConnection = new RTCPeerConnection({ iceServers });
 
     manager.peerConnection.onicecandidate = (event) => {
         if (event.candidate) {
