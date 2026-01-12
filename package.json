@@ -4,10 +4,10 @@
     "description": "A clean, modular peer-to-peer file transfer app",
     "main": "src/server/index.js",
     "scripts": {
-        "build:client": "esbuild src/public/js/app.js --bundle --platform=browser --format=esm --target=es2020 --sourcemap --outfile=src/public/js/bundle/app.js",
-        "build:client:min": "esbuild src/public/js/app.js --bundle --platform=browser --format=esm --target=es2020 --minify --outfile=src/public/js/bundle/app.js",
+        "build:client": "node -e \"require('fs').mkdirSync('src/public/js/bundle',{recursive:true})\" && esbuild src/public/js/app.js --bundle --platform=browser --format=esm --target=es2020 --sourcemap --outfile=src/public/js/bundle/app.js",
+        "build:client:min": "node -e \"require('fs').mkdirSync('src/public/js/bundle',{recursive:true})\" && esbuild src/public/js/app.js --bundle --platform=browser --format=esm --target=es2020 --minify --outfile=src/public/js/bundle/app.js",
         "build": "npm run build:client:min",
-        "dev:client": "esbuild src/public/js/app.js --bundle --platform=browser --format=esm --target=es2020 --sourcemap --outfile=src/public/js/bundle/app.js --watch",
+        "dev:client": "node -e \"require('fs').mkdirSync('src/public/js/bundle',{recursive:true})\" && esbuild src/public/js/app.js --bundle --platform=browser --format=esm --target=es2020 --sourcemap --outfile=src/public/js/bundle/app.js --watch",
         "dev:server": "nodemon src/server/index.js",
         "dev": "concurrently -n client,server -c cyan,green \"npm:dev:client\" \"npm:dev:server\"",
         "start": "node src/server/index.js",
@@ -21,7 +21,8 @@
         "express": "^4.18.2",
         "express-rate-limit": "^8.2.1",
         "helmet": "^8.1.0",
-        "socket.io": "^4.7.2"
+        "socket.io": "^4.7.2",
+        "webrtc-adapter": "^9.0.3"
     },
     "devDependencies": {
         "concurrently": "^9.1.0",
