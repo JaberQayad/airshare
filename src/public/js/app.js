@@ -49,6 +49,7 @@ let currentRoomId = null;
 let selectedFile = null;
 let pendingJoinRole = null; // 'receiver' | 'sender' | null
 let pendingAcceptedPeerId = null;
+let offerCreatedForRoom = null;
 let senderRestoreTimer = null;
 let healthPingDisabled = false;
 let healthPingFailures = 0;
@@ -232,6 +233,7 @@ function initializeApp() {
         selectedFile = file;
         const newRoomId = generateSecureIdHex(16);
         currentRoomId = newRoomId;
+        offerCreatedForRoom = null;
         saveSession({ mode: 'sender', roomId: newRoomId, createdAt: Date.now() });
         socket.emit('create-room', newRoomId);
 
@@ -320,8 +322,16 @@ function initializeApp() {
     socket.on('peer-joined', (data) => {
         const isSender = webrtcManager.isInitiator;
         if (isSender) {
-            // Only create an offer once the server confirms the accepted peer actually joined.
-            if (pendingAcceptedPeerId && data.peerId === pendingAcceptedPeerId) {
+            // Create an offer when a peer actually joins the room.
+            // Note: peers may join via the approval flow (pendingAcceptedPeerId set) or via direct join-room
+            // (e.g. refresh/restore). In both cases we must negotiate, otherwise ICE stays "new" forever.
+            const isExpectedApprovedPeer = pendingAcceptedPeerId && data.peerId === pendingAcceptedPeerId;
+            const isDirectJoinOrRestore = !pendingAcceptedPeerId;
+            const shouldCreateOffer = isExpectedApprovedPeer || isDirectJoinOrRestore;
+
+            // Guard to avoid spamming renegotiation if multiple peer-joined events arrive.
+            if (shouldCreateOffer && offerCreatedForRoom !== currentRoomId) {
+                offerCreatedForRoom = currentRoomId;
                 pendingAcceptedPeerId = null;
                 ui.updateStatus('Peer joined! Creating offer...');
                 // Small delay to allow receiver to initialize its peer connection after room-joined.
