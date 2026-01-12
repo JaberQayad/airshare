@@ -26,14 +26,18 @@ function isIPOrCIDR(str) {
 
 // Resolve domain to IP using dns-sync package
 function resolveDomain(domain) {
+    console.log(`[CONFIG] Attempting to resolve domain: "${domain}"...`);
     try {
         const ip = dnsSync.resolve(domain);
         if (ip) {
-            console.log(`[CONFIG] Resolved "${domain}" -> ${ip}`);
+            console.log(`[CONFIG] ✓ Resolved "${domain}" -> ${ip}`);
             return ip;
+        } else {
+            console.warn(`[CONFIG] ✗ No IP returned for "${domain}"`);
         }
     } catch (err) {
-        console.warn(`[CONFIG] Failed to resolve "${domain}": ${err.message}`);
+        console.warn(`[CONFIG] ✗ Failed to resolve "${domain}": ${err.message || err}`);
+        console.warn(`[CONFIG] Stack:`, err.stack);
     }
     return null;
 }
