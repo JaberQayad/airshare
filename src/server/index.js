@@ -44,7 +44,13 @@ app.use(cors({ origin: config.corsOrigins }));
 
 // Trust Proxy Configuration
 // This enables correct client IP detection when running behind a reverse proxy (nginx, Apache, etc.)
-app.set('trust proxy', config.trustProxy);
+try {
+    app.set('trust proxy', config.trustProxy);
+    logger.info('Trust proxy configured', { trustProxy: config.trustProxy });
+} catch (err) {
+    logger.error('Failed to set trust proxy - using safe default (false)', err);
+    app.set('trust proxy', false);
+}
 
 // Rate Limiting
 const limiter = rateLimit({

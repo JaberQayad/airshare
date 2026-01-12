@@ -193,26 +193,28 @@ Enable trust proxy to correctly detect client IPs when running behind Nginx, Apa
 
 - **Default**: `true` (trust all - optimized for Docker)
 - **Supported values**:
-  - `1`, `2`, etc. - Trust N proxy hops
-  - `"trusted.domain.com"` - Trust a specific domain or IP address
+  - `1`, `2`, etc. - Trust N proxy hops (recommended)
+  - `"10.0.0.1"` - Trust a specific IP address
+  - `"192.168.0.0/16"` - Trust an IP subnet (CIDR notation)
   - `true` - Trust all proxies (use only in controlled environments)
   - `false` - Trust no proxies
+- **⚠️ Important**: Domain names are NOT supported. Use IP addresses or CIDR notation only.
 - **When needed**: Set this when you see `ERR_ERL_UNEXPECTED_X_FORWARDED_FOR` errors
 
 **Example: Single Nginx Reverse Proxy**
 ```bash
-export TRUSTED_DOMAINS="trusted.domain.com"
+export TRUSTED_DOMAINS=1
 ```
 
-**Example: Trusted Domain**
+**Example: Trust Specific Proxy IP**
 ```bash
-export TRUSTED_DOMAINS="airshare.internal"
+export TRUSTED_DOMAINS="10.0.0.1"
 ```
 
 **Example: Docker Compose**
 ```yaml
 environment:
-  TRUSTED_DOMAINS: "trusted.domain.com"
+  TRUSTED_DOMAINS: 1  # Trust first proxy
 ```
 
 **Example: Nginx Configuration**

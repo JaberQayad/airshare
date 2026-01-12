@@ -64,7 +64,7 @@ services:
       MAX_IN_MEMORY_SIZE: 209715200      # Stream files >200MB to disk
       MAX_PEERS_PER_ROOM: 2              # 1 sender + 1 receiver
       ROOM_TTL_MS: 1800000               # Clean up abandoned rooms after 30 min
-      TRUSTED_DOMAINS: "trusted.domain.com"  # If behind reverse proxy
+      TRUSTED_DOMAINS: 1                 # Trust first proxy (use 1 or IP address)
 ```
 
 See [Configuration Guide](./configuration.md) for all available options.

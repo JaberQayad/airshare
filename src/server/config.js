@@ -59,7 +59,7 @@ if (iceServersEnv) {
 }
 
 // Parse TRUSTED_DOMAINS environment variable
-// Support numbers (hop count), booleans (all/none), or strings (specific IPs/subnets/domains)
+// Support numbers (hop count), booleans (all/none), or IP addresses/CIDR (NOT domain names)
 let trustProxy = true; // Default to true for Docker-friendly behavior
 if (process.env.TRUSTED_DOMAINS) {
     const val = process.env.TRUSTED_DOMAINS.trim();
@@ -74,8 +74,17 @@ if (process.env.TRUSTED_DOMAINS) {
         if (!isNaN(num)) {
             trustProxy = num;
         } else {
-            // Support comma-separated strings or single IP/subnet/domain strings
-            trustProxy = val;
+            // Validate that it looks like an IP address or CIDR notation
+            // IP format: xxx.xxx.xxx.xxx or CIDR: xxx.xxx.xxx.xxx/xx or IPv6
+            const isValidIPFormat = /^(?:(?:[0-9]{1,3}\.){3}[0-9]{1,3}(?:\/[0-9]{1,2})?|[a-fA-F0-9:]+(?:\/[0-9]{1,3})?)$/.test(val);
+            
+            if (isValidIPFormat) {
+                trustProxy = val;
+            } else {
+                // Invalid format - domain names are NOT supported by Express trust proxy
+                console.warn(`[CONFIG] Invalid TRUSTED_DOMAINS value: "${val}". Expected: number, true/false, or IP address/CIDR notation (e.g., "10.0.0.1", "192.168.0.0/16"). Domain names are NOT supported. Falling back to default (true).`);
+                trustProxy = true;
+            }
         }
     }
 }
