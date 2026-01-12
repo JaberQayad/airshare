@@ -5,7 +5,10 @@
     "main": "src/server/index.js",
     "scripts": {
         "start": "node src/server/index.js",
-        "dev": "nodemon src/server/index.js"
+        "dev": "nodemon src/server/index.js",
+        "lint": "eslint \"src/**/*.js\"",
+        "format": "prettier --write \"src/**/*.js\" \"src/**/*.css\" \"src/**/*.html\" \"docs/**/*.{md,mdx,json,js,ts,tsx}\"",
+        "format:check": "prettier --check \"src/**/*.js\" \"src/**/*.css\" \"src/**/*.html\""
     },
     "dependencies": {
         "cors": "^2.8.5",
@@ -16,7 +19,9 @@
         "socket.io": "^4.7.2"
     },
     "devDependencies": {
-        "nodemon": "^3.0.1"
+        "nodemon": "^3.0.1",
+        "eslint": "^9.17.0",
+        "prettier": "^3.4.2"
     },
     "repository": {
         "type": "git",

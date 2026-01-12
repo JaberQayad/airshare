@@ -25,3 +25,7 @@ logs/
 *.log
 # Plans & Documentation
 plans/
+
+# Docs build output
+docs/build/
+docs/.docusaurus/

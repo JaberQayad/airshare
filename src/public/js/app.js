@@ -50,6 +50,7 @@ let selectedFile = null;
 let pendingJoinRole = null; // 'receiver' | 'sender' | null
 let pendingAcceptedPeerId = null;
 let offerCreatedForRoom = null;
+let lastJoinedPeerId = null;
 let senderRestoreTimer = null;
 let healthPingDisabled = false;
 let healthPingFailures = 0;
@@ -234,6 +235,7 @@ function initializeApp() {
         const newRoomId = generateSecureIdHex(16);
         currentRoomId = newRoomId;
         offerCreatedForRoom = null;
+        lastJoinedPeerId = null;
         saveSession({ mode: 'sender', roomId: newRoomId, createdAt: Date.now() });
         socket.emit('create-room', newRoomId);
 
@@ -322,6 +324,13 @@ function initializeApp() {
     socket.on('peer-joined', (data) => {
         const isSender = webrtcManager.isInitiator;
         if (isSender) {
+            // If the peer socket id changed (refresh/reconnect), allow a fresh offer.
+            // This avoids getting stuck due to the per-room offer guard.
+            if (data?.peerId && data.peerId !== lastJoinedPeerId) {
+                lastJoinedPeerId = data.peerId;
+                offerCreatedForRoom = null;
+            }
+
             try {
                 webrtcManager.lifecycle.hasRemotePeer = true;
                 webrtcManager.lifecycle.peerJoinedAt = Date.now();
