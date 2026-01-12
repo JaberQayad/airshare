@@ -131,13 +131,21 @@ docker-compose up -d
 
 ### Reverse Proxy Support
 - `TRUSTED_DOMAINS` - Enable trust proxy for correct client IP detection when running behind a reverse proxy (nginx, Apache, etc.)
-  - **Not set** (default): Trust proxy disabled - safe for direct deployments
-  - `1`, `2` - Trust first N proxies (hop count)
+  - **Not set** (default): `true` - Trusts all proxies (safe for most Docker/proxy deployments)
+  - `false` - Trust NO proxies (⚠️ WARNING: Rate limiting won't work correctly if behind proxy)
+  - `1`, `2` - Trust first N proxies (hop count) - recommended for specific proxy setups
   - `"example.com"` - Trust specific domain (auto-resolved to IP)
   - `"10.0.0.1"`, `"192.168.0.0/16"` - Trust specific IP address or CIDR subnet
   - `"example.com,10.0.0.1"` - Multiple values (comma-separated)
 
-**When to use**: Set `TRUSTED_DOMAINS` when your application is behind a reverse proxy to properly handle rate limiting and client IP detection.
+**When to use**: The default (`true`) works for most deployments. Only change if:
+- You want to trust specific proxy IPs only (use `1`, `2`, or specific IPs)
+- You're NOT behind a proxy and want maximum security (use `false`)
+
+⚠️ **WARNING**: If you set `TRUSTED_DOMAINS=false` while behind a proxy:
+- Rate limiting will use the proxy's IP instead of client IPs
+- All clients behind the proxy will share the same rate limit
+- This can cause legitimate users to be blocked
 
 Example with Docker:
 ```bash

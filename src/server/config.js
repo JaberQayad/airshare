@@ -92,6 +92,9 @@ if (process.env.TRUSTED_DOMAINS) {
     
     if (lowerVal === 'false') {
         trustProxy = false;
+        console.warn(`[CONFIG] ⚠️  TRUSTED_DOMAINS=false - Proxy IPs will NOT be trusted.`);
+        console.warn(`[CONFIG] ⚠️  If behind a reverse proxy, rate limiting may not work correctly.`);
+        console.warn(`[CONFIG] ⚠️  All clients behind the proxy will share the same rate limit.`);
     } else if (lowerVal === 'true') {
         trustProxy = true;
     } else {
