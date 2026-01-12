@@ -212,19 +212,19 @@ export function setupDataChannel(manager, channel, fileToSend) {
 
     const openTimeout = setTimeout(() => {
         if (channel.readyState !== 'open') {
+            // If the sender is simply waiting for a receiver to open/accept the link,
+            // the channel will stay "connecting" and the PC will stay "new". That's not a failure.
+            if (manager.isInitiator && !manager.lifecycle?.hasRemotePeer) {
+                // Keep this intentionally quiet: this is the normal steady-state before a peer joins.
+                manager.ui.updateStatus('Waiting for peer to join...');
+                return;
+            }
+
             console.error('[DATA-CHANNEL] ✗ Channel did not open within 30 seconds');
             console.error('[DATA-CHANNEL] Current state:', channel.readyState);
             console.error('[DATA-CHANNEL] Peer connection state:', manager.peerConnection?.connectionState);
             console.error('[DATA-CHANNEL] ICE connection state:', manager.peerConnection?.iceConnectionState);
             console.error('[DATA-CHANNEL] ICE gathering state:', manager.peerConnection?.iceGatheringState);
-
-            // If the sender is simply waiting for a receiver to open/accept the link,
-            // the channel will stay "connecting" and the PC will stay "new". That's not a failure.
-            if (manager.isInitiator && !manager.lifecycle?.hasRemotePeer) {
-                console.warn('[DATA-CHANNEL] Still waiting for peer to join; suppressing failure dialog');
-                manager.ui.updateStatus('Waiting for peer to join...');
-                return;
-            }
 
             manager.logConnectionFailure();
             const message = manager.peerConnection?.connectionState === 'failed'
