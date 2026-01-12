@@ -2,7 +2,9 @@ export function initLifecycle(manager) {
     manager.lifecycle = {
         intentionalClose: false,
         transferComplete: false,
-        disconnectTimer: null
+        disconnectTimer: null,
+        hasRemotePeer: false,
+        peerJoinedAt: null
     };
 }
 

@@ -322,6 +322,11 @@ function initializeApp() {
     socket.on('peer-joined', (data) => {
         const isSender = webrtcManager.isInitiator;
         if (isSender) {
+            try {
+                webrtcManager.lifecycle.hasRemotePeer = true;
+                webrtcManager.lifecycle.peerJoinedAt = Date.now();
+            } catch {}
+
             // Create an offer when a peer actually joins the room.
             // Note: peers may join via the approval flow (pendingAcceptedPeerId set) or via direct join-room
             // (e.g. refresh/restore). In both cases we must negotiate, otherwise ICE stays "new" forever.

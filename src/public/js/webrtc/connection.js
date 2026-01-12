@@ -39,6 +39,8 @@ export function setupPeerConnection(manager, roomId, isInitiator, fileToSend = n
     // New session
     manager.lifecycle.intentionalClose = false;
     manager.lifecycle.transferComplete = false;
+    manager.lifecycle.hasRemotePeer = false;
+    manager.lifecycle.peerJoinedAt = null;
     clearDisconnectTimer(manager);
 
     manager.roomId = roomId;
@@ -169,6 +171,15 @@ export function setupDataChannel(manager, channel, fileToSend) {
             console.error('[DATA-CHANNEL] Peer connection state:', manager.peerConnection?.connectionState);
             console.error('[DATA-CHANNEL] ICE connection state:', manager.peerConnection?.iceConnectionState);
             console.error('[DATA-CHANNEL] ICE gathering state:', manager.peerConnection?.iceGatheringState);
+
+            // If the sender is simply waiting for a receiver to open/accept the link,
+            // the channel will stay "connecting" and the PC will stay "new". That's not a failure.
+            if (manager.isInitiator && !manager.lifecycle?.hasRemotePeer) {
+                console.warn('[DATA-CHANNEL] Still waiting for peer to join; suppressing failure dialog');
+                manager.ui.updateStatus('Waiting for peer to join...');
+                return;
+            }
+
             manager.logConnectionFailure();
             const message = manager.peerConnection?.connectionState === 'failed'
                 ? 'Could not connect to peer - firewall/NAT blocked.\n\nTry:\n• Disabling VPN\n• Using different WiFi/network\n• Checking firewall settings\n• Allowing browser permissions'
