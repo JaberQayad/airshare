@@ -4,7 +4,8 @@ export function initLifecycle(manager) {
         transferComplete: false,
         disconnectTimer: null,
         hasRemotePeer: false,
-        peerJoinedAt: null
+        peerJoinedAt: null,
+        everConnected: false
     };
 }
 

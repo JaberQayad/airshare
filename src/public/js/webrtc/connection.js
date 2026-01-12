@@ -41,6 +41,7 @@ export function setupPeerConnection(manager, roomId, isInitiator, fileToSend = n
     manager.lifecycle.transferComplete = false;
     manager.lifecycle.hasRemotePeer = false;
     manager.lifecycle.peerJoinedAt = null;
+    manager.lifecycle.everConnected = false;
     clearDisconnectTimer(manager);
 
     manager.roomId = roomId;
@@ -85,12 +86,26 @@ export function setupPeerConnection(manager, roomId, isInitiator, fileToSend = n
 
         if (state === 'connected') {
             console.log('✓ Peer connection established');
+            manager.lifecycle.everConnected = true;
             manager.ui.updateStatus('Connected');
             manager.stats.startTime = Date.now();
             clearDisconnectTimer(manager);
         } else if (state === 'connecting') {
             console.log('⏳ Peer connection connecting...');
         } else if (state === 'failed') {
+            // If we were previously connected and then the receiver closed their tab,
+            // browsers often transition disconnected -> failed. That's expected and shouldn't
+            // show a full "connection failed" dialog.
+            if (manager.lifecycle.intentionalClose || manager.lifecycle.transferComplete) {
+                return;
+            }
+
+            if (manager.lifecycle.everConnected) {
+                console.warn('⚠️  Peer connection failed after being connected (peer likely left)');
+                manager.ui.updateStatus('Peer disconnected');
+                return;
+            }
+
             manager.logConnectionFailure();
             manager.ui.showError('Connection failed: Unable to establish peer connection.\n\nTroubleshooting:\n• Check firewall/NAT settings\n• Try disabling VPN\n• Check if both devices are online\n• Allow pop-ups for camera/microphone (if prompted)');
         } else if (state === 'disconnected') {
@@ -127,6 +142,12 @@ export function setupPeerConnection(manager, roomId, isInitiator, fileToSend = n
         } else if (state === 'completed') {
             console.log('✓ ICE connection completed');
         } else if (state === 'failed') {
+            // If we were previously connected, an ICE "failed" after disconnect is commonly
+            // the remote tab closing. Don't spam full diagnostics in that case.
+            if (manager.lifecycle.everConnected) {
+                console.warn('⚠️  ICE failed after being connected (peer likely left)');
+                return;
+            }
             console.error('✗ ICE connection failed');
             manager.logICEFailureDetails();
         } else if (state === 'disconnected') {
