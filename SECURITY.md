@@ -155,7 +155,7 @@ When using Nginx/Apache/Cloudflare:
 ```env
 TRUSTED_DOMAINS=1  # Trust first proxy
 # or
-TRUSTED_DOMAINS=trusted.proxy.domain.com  # Trust specific domain
+TRUSTED_DOMAINS=example.com  # Trust specific domain
 ```
 
 #### Nginx Example

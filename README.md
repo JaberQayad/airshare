@@ -133,9 +133,9 @@ docker-compose up -d
 - `TRUSTED_DOMAINS` - Enable trust proxy for correct client IP detection when running behind a reverse proxy (nginx, Apache, etc.)
   - **Not set** (default): Trust proxy disabled - safe for direct deployments
   - `1`, `2` - Trust first N proxies (hop count)
-  - `"proxy.domain.com"` - Trust specific domain (auto-resolved to IP)
+  - `"example.com"` - Trust specific domain (auto-resolved to IP)
   - `"10.0.0.1"`, `"192.168.0.0/16"` - Trust specific IP address or CIDR subnet
-  - `"proxy.com,10.0.0.1"` - Multiple values (comma-separated)
+  - `"example.com,10.0.0.1"` - Multiple values (comma-separated)
 
 **When to use**: Set `TRUSTED_DOMAINS` when your application is behind a reverse proxy to properly handle rate limiting and client IP detection.
 
@@ -143,7 +143,7 @@ Example with Docker:
 ```bash
 docker run -d \
   -p 4111:3000 \
-  -e TRUSTED_DOMAINS="proxy.domain.com" \
+  -e TRUSTED_DOMAINS="example.com" \
   --name airshare \
   --restart unless-stopped \
   ghcr.io/jaberio/airshare:latest
@@ -152,7 +152,7 @@ docker run -d \
 Example with Docker Compose - uncomment in `docker-compose.yml`:
 ```yaml
 environment:
-  TRUSTED_DOMAINS: "trusted.domain.com, another.trusted.domain.com"
+  TRUSTED_DOMAINS: "example.com"
 ```
 
 ---

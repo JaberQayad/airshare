@@ -26,7 +26,7 @@ services:
       MAX_SIGNAL_PAYLOAD_BYTES: 65536    # 64KB signaling limit
       
       # Uncomment and adjust for production needs
-      # TRUSTED_DOMAINS: "proxy.domain.com"  # Domain name, IP, or number (1 for single hop)
+      # TRUSTED_DOMAINS: "example.com"  # Domain name, IP, or number (1 for single hop)
       # ICE_SERVERS: '[{"urls":"stun:stun.l.google.com:19302"}]'  # STUN/TURN servers
       # APP_TITLE: AirShare
       # THEME_COLOR: '#6366f1'
