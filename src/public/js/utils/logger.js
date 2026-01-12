@@ -72,5 +72,18 @@ class Logger {
 }
 
 // Export singleton instance
-export const logger = new Logger();
-export { LOG_LEVELS };
+const logger = new Logger(LOG_LEVELS.INFO);
+
+// Expose for external configuration
+export { logger, LOG_LEVELS };
+
+// Convenience function for global log level adjustment
+export function setLogLevel(level) {
+    logger.setLevel(level);
+}
+
+// Make logger available globally for debugging
+if (typeof window !== 'undefined') {
+    window.airshareLogger = logger;
+    window.setLogLevel = setLogLevel;
+}

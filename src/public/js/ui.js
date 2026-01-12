@@ -1,5 +1,5 @@
 import { formatBytes } from './utils.js';
-import { logger, setLogLevel } from './utils/logger.js';
+import { logger } from './utils/logger.js';
 
 export class UIManager {
     constructor() {
