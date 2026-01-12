@@ -72,7 +72,12 @@ cp .env.example .env
 
 ### 3. Run
 ```bash
-npm start
+# Recommended: dev server + client bundler (watch)
+npm run dev
+
+# Or: one-time client build then run server
+# npm run build:client
+# npm start
 ```
 Visit: `http://localhost:3000`
 
