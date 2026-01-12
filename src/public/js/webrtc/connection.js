@@ -42,6 +42,11 @@ export function setupPeerConnection(manager, roomId, isInitiator, fileToSend = n
     manager.lifecycle.hasRemotePeer = false;
     manager.lifecycle.peerJoinedAt = null;
     manager.lifecycle.everConnected = false;
+    manager.lifecycle.restartingForPeer = false;
+    if (manager.lifecycle.restartTimer) {
+        clearTimeout(manager.lifecycle.restartTimer);
+        manager.lifecycle.restartTimer = null;
+    }
     clearDisconnectTimer(manager);
 
     manager.roomId = roomId;
@@ -101,8 +106,28 @@ export function setupPeerConnection(manager, roomId, isInitiator, fileToSend = n
             }
 
             if (manager.lifecycle.everConnected) {
-                console.warn('⚠️  Peer connection failed after being connected (peer likely left)');
+                console.log('[CONNECTION] Peer left (failed after connected)');
                 manager.ui.updateStatus('Peer disconnected');
+
+                // Sender: automatically re-create a fresh peer connection so the same link can accept
+                // a new receiver without requiring a hard refresh.
+                if (manager.isInitiator && !manager.lifecycle.restartingForPeer) {
+                    manager.lifecycle.restartingForPeer = true;
+                    const savedRoomId = manager.roomId;
+                    const savedFile = manager.pendingFile;
+                    manager.lifecycle.restartTimer = setTimeout(() => {
+                        manager.lifecycle.restartTimer = null;
+                        try {
+                            resetConnection(manager);
+                        } catch {}
+                        try {
+                            setupPeerConnection(manager, savedRoomId, true, savedFile);
+                            manager.ui.updateStatus('Waiting for peer...');
+                        } finally {
+                            manager.lifecycle.restartingForPeer = false;
+                        }
+                    }, 250);
+                }
                 return;
             }
 
@@ -247,6 +272,26 @@ export function setupDataChannel(manager, channel, fileToSend) {
         console.log('  - ICE connection state:', manager.peerConnection?.iceConnectionState);
         console.log('  - Transfer offset:', manager.sendState.offset, 'of', manager.sendState.file?.size || 'unknown');
         manager.ui.updateStatus('Connection closed');
+
+        // If we had a working connection and the peer closed their tab, proactively reset so
+        // the room link can accept a new peer.
+        if (manager.isInitiator && manager.lifecycle?.everConnected && !manager.lifecycle.transferComplete && !manager.lifecycle.restartingForPeer) {
+            manager.lifecycle.restartingForPeer = true;
+            const savedRoomId = manager.roomId;
+            const savedFile = manager.pendingFile;
+            manager.lifecycle.restartTimer = setTimeout(() => {
+                manager.lifecycle.restartTimer = null;
+                try {
+                    resetConnection(manager);
+                } catch {}
+                try {
+                    setupPeerConnection(manager, savedRoomId, true, savedFile);
+                    manager.ui.updateStatus('Waiting for peer...');
+                } finally {
+                    manager.lifecycle.restartingForPeer = false;
+                }
+            }, 250);
+        }
     };
 
     channel.onerror = (error) => {

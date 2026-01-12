@@ -5,7 +5,9 @@ export function initLifecycle(manager) {
         disconnectTimer: null,
         hasRemotePeer: false,
         peerJoinedAt: null,
-        everConnected: false
+        everConnected: false,
+        restartingForPeer: false,
+        restartTimer: null
     };
 }
 
