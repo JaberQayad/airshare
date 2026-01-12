@@ -1,9 +1,6 @@
 import { UIManager } from './ui.js';
 import { WebRTCManager } from './webrtc.js';
 
-// WebRTC compatibility shim (bundled to avoid CSP issues).
-import 'webrtc-adapter';
-
 const SESSION_KEY = 'airshare.session.v1';
 
 function generateSecureIdHex(bytesLength = 16) {
