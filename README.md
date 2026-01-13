@@ -34,13 +34,13 @@ Run the application instantly using GitHub Container Registry:
 
 ```bash
 docker run -d \
-  -p 4111:3000 \
+  -p 3000:3000 \
   --name airshare \
   --restart unless-stopped \
-  ghcr.io/jaberio/airshare:v1.0.0
+  ghcr.io/jaberio/airshare:latest
 ```
 
-Open your browser and visit: `http://localhost:4111`
+Open your browser and visit: `http://localhost:3000`
 
 ---
 
@@ -98,70 +98,23 @@ docker-compose up -d
 ### Server Configuration
 - `PORT` - Server port (default: `3000`)
 - `NODE_ENV` - Node environment (default: `development`)
-- `MAX_FILE_SIZE` - Maximum file size allowed in bytes (default: `107374182400` = 100GB)
-- `APP_TITLE` - Application title (default: `AirShare`)
-- `THEME_COLOR` - Primary theme color hex code (default: `#6366f1`)
 
-### WebRTC Streaming & Backpressure (Enterprise)
-- `MAX_IN_MEMORY_SIZE` - Files larger than this use streaming to disk (default: `209715200` = 200MB)
-  - Uses File System Access API on Chrome/Edge 86+
-  - Fallback to in-memory with warning on unsupported browsers (Safari, Firefox)
-- `DEFAULT_CHUNK_SIZE` - Initial chunk size for transfers (default: `131072` = 128KB)
-- `MIN_CHUNK_SIZE` - Minimum chunk size under backpressure (default: `32768` = 32KB)
-- `MAX_CHUNK_SIZE` - Maximum chunk size when stable (default: `262144` = 256KB)
-- `BUFFER_HIGH_WATER` - Pause sender when buffered amount exceeds (default: `1048576` = 1MB)
-- `BUFFER_LOW_WATER` - Resume sender when buffered amount drops to (default: `262144` = 256KB)
+### PeerJS Configuration
+- `PEERJS_HOST` - PeerJS server hostname (default: `0.peerjs.com` - cloud server)
+- `PEERJS_PORT` - PeerJS server port (default: `443`)
+- `PEERJS_SECURE` - Use secure connection wss:// (default: `true`)
 
-### Signaling & Room Management (Enterprise)
-- `MAX_PEERS_PER_ROOM` - Maximum peers per room (default: `2` = 1 sender + 1 receiver)
-- `ROOM_TTL_MS` - Room time-to-live in milliseconds (default: `1800000` = 30 minutes)
-  - Abandoned rooms auto-cleanup prevents memory leak
-- `MAX_SIGNAL_PAYLOAD_BYTES` - Max signaling message size (default: `65536` = 64KB)
-  - Prevents DoS from oversized signals; typical signals are 1-5KB
-
-### ICE & Network
-- `ICE_SERVERS` - STUN/TURN servers for NAT traversal (JSON array)
-  - Default: `[{"urls":"stun:stun.l.google.com:19302"}]`
-  - Example with TURN: `[{"urls":"stun:stun.l.google.com:19302"},{"urls":"turn:turnserver.com","username":"user","credential":"pass"}]`
+### File Transfer Settings
+- `MAX_FILE_SIZE` - Maximum file size in bytes (default: `107374182400` = 100GB)
+- `CHUNK_SIZE` - Size of each data chunk transferred (default: `16384` = 16KB)
 
 ### UI & Branding
-- `DONATE_URL` - URL for donation link (optional)
-- `TERMS_URL` - URL for terms of service (optional)
-- `UMAMI_ID` - Umami analytics ID (optional)
+- `APP_TITLE` - Application title (default: `AirShare`)
+- `THEME_COLOR` - Primary theme color hex code (default: `#6366f1`)
+- `DONATE_URL` - URL for donation link in footer (optional)
+- `TERMS_URL` - URL for terms of service link in footer (optional)
 
-### Reverse Proxy Support
-- `TRUSTED_DOMAINS` - Enable trust proxy for correct client IP detection when running behind a reverse proxy (nginx, Apache, etc.)
-  - **Not set** (default): `true` - Trusts all proxies (safe for most Docker/proxy deployments)
-  - `false` - Trust NO proxies (⚠️ WARNING: Rate limiting won't work correctly if behind proxy)
-  - `1`, `2` - Trust first N proxies (hop count) - recommended for specific proxy setups
-  - `"example.com"` - Trust specific domain (auto-resolved to IP)
-  - `"10.0.0.1"`, `"192.168.0.0/16"` - Trust specific IP address or CIDR subnet
-  - `"example.com,10.0.0.1"` - Multiple values (comma-separated)
-
-**When to use**: The default (`true`) works for most deployments. Only change if:
-- You want to trust specific proxy IPs only (use `1`, `2`, or specific IPs)
-- You're NOT behind a proxy and want maximum security (use `false`)
-
-⚠️ **WARNING**: If you set `TRUSTED_DOMAINS=false` while behind a proxy:
-- Rate limiting will use the proxy's IP instead of client IPs
-- All clients behind the proxy will share the same rate limit
-- This can cause legitimate users to be blocked
-
-Example with Docker:
-```bash
-docker run -d \
-  -p 4111:3000 \
-  -e TRUSTED_DOMAINS="example.com" \
-  --name airshare \
-  --restart unless-stopped \
-  ghcr.io/jaberio/airshare:latest
-```
-
-Example with Docker Compose - uncomment in `docker-compose.yml`:
-```yaml
-environment:
-  TRUSTED_DOMAINS: "example.com"
-```
+**For detailed configuration options, see the [Configuration Guide](https://jaberio.github.io/airshare/docs/configuration).**
 
 ---
 
@@ -169,13 +122,12 @@ environment:
 
 AirShare implements multiple security layers:
 
-- **🛡️ Rate Limiting**: 100 req/15min per IP (HTTP) + 10 events/sec (WebSocket)
-- **🔐 Input Validation**: All config values validated with min/max bounds
-- **🚫 XSS Prevention**: Strict CSP headers, sanitized inputs, no innerHTML for user data
+- **🔐 End-to-End Encryption**: Files encrypted with AES-256-GCM before transfer
+- **🛡️ Client-Side Processing**: All encryption happens in your browser
+- **🚫 No Server Storage**: Files never touch our servers - direct P2P transfer
 - **🔒 Secure Headers**: Helmet.js with frameguard, noSniff, XSS filter
 - **👤 Non-root Docker**: Runs as unprivileged user (nodejs:1001)
-- **🎯 Config Filtering**: `/config` endpoint only exposes client-safe values
-- **📝 Audit Logging**: All security events logged (rate limits, invalid inputs)
+- **🎯 Password Protection**: Optional encryption key for shared links
 
 **See [SECURITY.md](SECURITY.md) for full security documentation and reporting vulnerabilities.**
 
@@ -183,9 +135,10 @@ AirShare implements multiple security layers:
 
 ## 🛠️ Tech Stack
 - **Frontend**: HTML5, CSS3, Vanilla JavaScript (ES Modules)
-- **Backend**: Node.js, Express
-- **Real-time**: Socket.io (Signaling), WebRTC (Data Transfer)
-- **Security**: Helmet.js, express-rate-limit, input validation
+- **Backend**: Node.js, Express (Static file serving)
+- **Real-time**: PeerJS (WebRTC abstraction with cloud signaling)
+- **Encryption**: Web Crypto API (AES-256-GCM)
+- **Security**: Helmet.js, CORS
 - **CI/CD**: GitHub Actions, GHCR.io
 
 ---

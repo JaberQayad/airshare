@@ -1,434 +1,325 @@
-import { UIManager } from './ui.js';
-import { WebRTCManager } from './webrtc.js';
-import { logger, setLogLevel } from './utils/logger.js';
-import { clearTimer, clearTimers } from './utils/cleanup.js';
+// Main Application - AirShare Playground
+import { logger, utils } from './utils.js';
+import { PeerConnection } from './peer-connection.js';
+import { FileTransfer } from './file-transfer.js';
+import { UIManager } from './ui-manager.js';
 
-const SESSION_KEY = 'airshare.session.v1';
-
-function generateSecureIdHex(bytesLength = 16) {
-    try {
-        const bytes = new Uint8Array(bytesLength);
-        crypto.getRandomValues(bytes);
-        return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
-    } catch {
-        // Fallback (less secure) for very old browsers.
-        return Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
-    }
-}
-
-function loadSession() {
-    try {
-        const raw = sessionStorage.getItem(SESSION_KEY);
-        return raw ? JSON.parse(raw) : null;
-    } catch {
-        return null;
-    }
-}
-
-function saveSession(next) {
-    try {
-        const prev = loadSession() || {};
-        sessionStorage.setItem(SESSION_KEY, JSON.stringify({ ...prev, ...next }));
-    } catch {
-        // ignore
-    }
-}
-
-const socket = io({
-    transports: ['websocket', 'polling'],
-    upgrade: true,
-    reconnection: true,
-    reconnectionAttempts: Infinity,
-    reconnectionDelay: 500,
-    reconnectionDelayMax: 5000,
-    timeout: 20000
-});
-logger.debug('APP', 'Socket.IO client initialized');
-
-const ui = new UIManager();
-let webrtcManager;
-let currentRoomId = null;
-let selectedFile = null;
-let pendingJoinRole = null; // 'receiver' | 'sender' | null
-let pendingAcceptedPeerId = null;
-let offerCreatedForRoom = null;
-let lastJoinedPeerId = null;
-let senderRestoreTimer = null;
-let healthPingDisabled = false;
-let healthPingFailures = 0;
-let lastHealthPingAt = 0;
-let keepAliveInterval = null;
-
-// Track all timers for cleanup
-const appTimers = new Set();
-
-function cleanupApp() {
-    logger.debug('APP', 'Cleaning up resources');
-    
-    clearTimers(appTimers);
-    clearTimer(senderRestoreTimer, () => { senderRestoreTimer = null; });
-    clearTimer(keepAliveInterval, () => { keepAliveInterval = null; });
-    
-    if (webrtcManager) {
-        try {
-            webrtcManager.cleanup();
-        } catch (e) {
-            logger.warn('APP', 'WebRTC cleanup failed:', e.message);
-        }
-    }
-    
-    try {
-        ui.cleanup();
-    } catch (e) {
-        logger.warn('APP', 'UI cleanup failed:', e.message);
-    }
-    
-    try {
-        socket.disconnect();
-        logger.debug('APP', 'Socket disconnected');
-    } catch (e) {
-        logger.warn('APP', 'Socket disconnect failed:', e.message);
-    }
-}
-
-async function pingHealthz() {
-    if (healthPingDisabled) return;
-    if (document.visibilityState !== 'visible') return;
-
-    const now = Date.now();
-    // Backoff on failures (1m, 2m, 4m, max 10m)
-    const backoffMs = Math.min(600000, 60000 * Math.pow(2, Math.min(healthPingFailures, 4)));
-    if (now - lastHealthPingAt < backoffMs) return;
-    lastHealthPingAt = now;
-
-    try {
-        const res = await fetch('/healthz', { method: 'HEAD', cache: 'no-store' });
-
-        if (res.status === 504) {
-            // Likely proxy/CDN gateway timeout; don't spam.
-            healthPingDisabled = true;
-            return;
-        }
-
-        if (!res.ok) {
-            healthPingFailures++;
-            if (healthPingFailures >= 5) healthPingDisabled = true;
-            return;
-        }
-
-        healthPingFailures = 0;
-    } catch {
-        healthPingFailures++;
-        if (healthPingFailures >= 5) healthPingDisabled = true;
-    }
-}
-
-function getReceiverRoomFromUrl() {
-    const urlParams = new URLSearchParams(window.location.search);
-    return urlParams.get('room');
-}
-
-function isReceiverMode() {
-    return !!getReceiverRoomFromUrl();
-}
-
-function tryRestoreRoomMembership(reason) {
-    if (!currentRoomId) return;
-
-    // Receiver: always re-join by URL room.
-    if (isReceiverMode()) {
-        pendingJoinRole = 'receiver';
-        ui.updateStatus(reason ? `Reconnecting (${reason})...` : 'Reconnecting...');
-        socket.emit('request-join', currentRoomId);
-        return;
+class AirShareApp {
+    constructor() {
+        this.ui = new UIManager();
+        this.peerConnection = null;
+        this.fileTransfer = null;
+        this.mode = null; // 'sender' or 'receiver'
+        this.password = null;
+        this.metadata = null;
+        
+        this.init();
     }
 
-    // Sender: prefer joining the existing room (if the receiver is still there).
-    // If the room no longer exists, we'll fall back to re-creating it.
-    pendingJoinRole = 'sender';
-    ui.updateStatus(reason ? `Restoring room (${reason})...` : 'Restoring room...');
-
-    // Prepare WebRTC so if the room is restored and a peer joins, we're ready.
-    if (webrtcManager && selectedFile) {
-        webrtcManager.setupPeerConnection(currentRoomId, true, selectedFile);
-    }
-
-    socket.emit('join-room', currentRoomId);
-
-    // Fallback: if we don't get a response (e.g. cold start), try to recreate.
-    clearTimeout(senderRestoreTimer);
-    senderRestoreTimer = setTimeout(() => {
-        if (pendingJoinRole === 'sender' && currentRoomId && !isReceiverMode()) {
-            socket.emit('create-room', currentRoomId);
-        }
-    }, 3500);
-}
-
-// Socket connection events
-socket.on('connect', () => {
-    logger.info('APP', `Connected to server: ${socket.id}`);
-    ui.updateStatus('Connected');
-    tryRestoreRoomMembership('connected');
-});
-
-socket.on('disconnect', (reason) => {
-    logger.warn('APP', `Disconnected: ${reason}`);
-    ui.updateStatus('Disconnected from server');
-});
-
-socket.on('connect_error', (error) => {
-    logger.error('APP', `Connection error: ${error.message}`);
-    ui.updateStatus('Connection issue... retrying');
-});
-
-socket.on('reconnect', (attempt) => {
-    logger.info('APP', `Reconnected after ${attempt} attempts`);
-    tryRestoreRoomMembership('reconnected');
-});
-
-socket.on('reconnect_attempt', (attempt) => {
-    ui.updateStatus(`Reconnecting... (${attempt})`);
-});
-
-// Fetch config and initialize
-fetch('/config')
-    .then(response => response.json())
-    .then(config => {
-        // Apply log level from config (defaults to INFO if not set)
-        if (config.logLevel) {
-            setLogLevel(config.logLevel);
+    async init() {
+        logger.log('Initializing AirShare Playground...');
+        
+        // Check if receiver mode (has peer ID in URL)
+        const params = new URLSearchParams(window.location.search);
+        const remotePeerId = params.get('peer');
+        
+        if (remotePeerId) {
+            await this.initReceiver(remotePeerId);
+        } else {
+            await this.initSender();
         }
         
-        logger.info('APP', 'Config loaded:', {
-            iceServers: config.iceServers?.length,
-            port: config.port,
-            chunkSize: config.defaultChunkSize,
-            logLevel: config.logLevel || 'INFO'
-        });
-        ui.applyConfig(config);
-        webrtcManager = new WebRTCManager(socket, config, ui);
-        initializeApp();
-    })
-    .catch(err => {
-        logger.error('APP', `Config load failed: ${err.message}`);
-        ui.showError('Failed to load configuration: ' + err.message);
-    });
+        this.bindEvents();
+    }
 
-function initializeApp() {
-    // Avoid showing noisy disconnect errors on refresh/close.
-    window.addEventListener('beforeunload', () => {
-        try { webrtcManager?.markIntentionalClose?.(); } catch {}
-        cleanupApp();
-    });
-
-    // If page is restored from back/forward cache, sockets can be stale.
-    window.addEventListener('pageshow', (event) => {
-        if (event.persisted) {
-            window.location.reload();
-        }
-    });
-
-    // If tab was suspended/paused, force a reconnect when it becomes visible.
-    document.addEventListener('visibilitychange', () => {
-        if (document.hidden) return;
-
-        // Try to wake the server/proxy path too.
-        pingHealthz();
-
-        if (!socket.connected) {
-            socket.connect();
-            // If the browser/network stack is in a bad state, reload after a short grace period.
-            const reconnectTimer = setTimeout(() => {
-                if (!socket.connected) window.location.reload();
-            }, 3000);
-            appTimers.add(reconnectTimer);
-        }
-    });
-
-    // Optional keep-alive ping (helps avoid infra/proxy idling)
-    // Kept intentionally quiet: uses HEAD + backoff + auto-disable if gateway returns 504.
-    keepAliveInterval = setInterval(() => {
-        pingHealthz();
-    }, 30000);
-    appTimers.add(keepAliveInterval);
-
-    // Check URL for room
-    const roomId = getReceiverRoomFromUrl();
-
-    if (roomId) {
-        // Receiver mode
-        currentRoomId = roomId;
-        saveSession({ mode: 'receiver', roomId });
-        ui.showReceiverUI();
-        ui.updateStatus('Waiting for sender approval...');
-        socket.emit('request-join', roomId);
-    } else {
-        // Sender mode: after a hard reload the file is gone, so a previous sender session
-        // can't be resumed safely. Start fresh.
-        const prev = loadSession();
-        if (prev?.mode === 'sender') {
-            try { sessionStorage.removeItem(SESSION_KEY); } catch {}
+    async initSender() {
+        this.mode = 'sender';
+        this.ui.showSection('senderSection');
+        this.ui.updateStatus('Ready - Select files to share');
+        
+        // Initialize peer connection
+        this.peerConnection = new PeerConnection(
+            (state) => this.onConnectionStateChange(state),
+            (data) => this.onDataReceived(data)
+        );
+        
+        try {
+            const peerId = await this.peerConnection.initialize();
+            const shareUrl = `${window.location.origin}?peer=${peerId}`;
+            logger.info('Sender ready. Share URL:', shareUrl);
+        } catch (err) {
+            logger.error('Failed to initialize sender:', err);
+            this.ui.showError('Failed to initialize. Please refresh the page.');
         }
     }
 
-    // UI Events
-    ui.onFileSelect((file) => {
-        selectedFile = file;
-        const newRoomId = generateSecureIdHex(16);
-        currentRoomId = newRoomId;
-        offerCreatedForRoom = null;
-        lastJoinedPeerId = null;
-        saveSession({ mode: 'sender', roomId: newRoomId, createdAt: Date.now() });
-        socket.emit('create-room', newRoomId);
-
-        const link = `${window.location.origin}/?room=${newRoomId}`;
-        ui.showLinkSection(link);
-
-        webrtcManager.setupPeerConnection(newRoomId, true, file);
-    });
-
-    ui.onDownloadClick((file) => {
-        webrtcManager.downloadFile(file);
-    });
-
-    // Socket Events
-    socket.on('room-joined', (room) => {
-        logger.info('APP', `Joined room as receiver: ${room.roomId}`);
-        currentRoomId = room.roomId;
-
-        if (pendingJoinRole === 'sender') {
-            pendingJoinRole = null;
-            clearTimeout(senderRestoreTimer);
-            if (webrtcManager && selectedFile) {
-                logger.debug('APP', 'Sender room restored');
-                ui.updateStatus('Room restored. Waiting for peer...');
-                webrtcManager.setupPeerConnection(room.roomId, true, selectedFile);
-            } else {
-                logger.warn('APP', 'Sender room restored but no file selected');
-                ui.updateStatus('Reconnected. Select a file again to share.');
-            }
-            return;
-        }
-
-        logger.debug('APP', 'Setting up as receiver');
-        pendingJoinRole = null;
-        saveSession({ mode: 'receiver', roomId: room.roomId });
-        webrtcManager.setupPeerConnection(room.roomId, false);
-    });
-
-    socket.on('join-requested', ({ roomId } = {}) => {
-        if (isReceiverMode()) {
-            ui.updateStatus('Waiting for sender approval...');
-        }
-    });
-
-    socket.on('room-not-found', (payload) => {
-        logger.error('APP', 'Room not found or expired:', payload);
-
-        if (pendingJoinRole === 'sender' && currentRoomId && !isReceiverMode()) {
-            clearTimeout(senderRestoreTimer);
-            pendingJoinRole = null;
-            logger.debug('APP', 'Recreating expired sender room');
-            ui.updateStatus('Room expired. Recreating...');
-            socket.emit('create-room', currentRoomId);
-            if (webrtcManager && selectedFile) {
-                webrtcManager.setupPeerConnection(currentRoomId, true, selectedFile);
-                ui.updateStatus('Room recreated. Waiting for peer...');
-            } else {
-                ui.updateStatus('Room recreated. Select a file again to share.');
-            }
-            return;
-        }
-
-        logger.warn('APP', 'Receiver room not found, redirecting home');
-        ui.showError('Room not found or expired.');
-        try { sessionStorage.removeItem(SESSION_KEY); } catch {}
-        window.location.href = '/';
-    });
-
-    socket.on('peer-join-request', (data) => {
-        const isSender = webrtcManager.isInitiator;
-        if (!isSender) return;
-
-        ui.updateStatus('Peer wants to connect...');
-        ui.showConnectionPrompt(
-            data.peerId,
-            () => {
-                pendingAcceptedPeerId = data.peerId;
-                ui.updateStatus('Accepted. Connecting...');
-                socket.emit('peer-accepted', { roomId: currentRoomId, peerId: data.peerId });
-            },
-            () => {
-                socket.emit('peer-rejected', { roomId: currentRoomId, peerId: data.peerId });
-            }
+    async initReceiver(remotePeerId) {
+        this.mode = 'receiver';
+        this.ui.showSection('receiverSection');
+        this.ui.updateStatus('Connecting to sender...');
+        
+        // Initialize peer connection
+        this.peerConnection = new PeerConnection(
+            (state) => this.onConnectionStateChange(state),
+            (data) => this.onDataReceived(data)
         );
-    });
+        
+        try {
+            await this.peerConnection.initialize();
+            this.peerConnection.connectToPeer(remotePeerId);
+            logger.info('Receiver connecting to:', remotePeerId);
+        } catch (err) {
+            logger.error('Failed to initialize receiver:', err);
+            this.ui.showError('Failed to connect. Please check the link.');
+        }
+    }
 
-    socket.on('peer-joined', (data) => {
-        const isSender = webrtcManager.isInitiator;
-        if (isSender) {
-            if (data?.peerId && data.peerId !== lastJoinedPeerId) {
-                logger.debug('APP', `New peer ${data.peerId} (previous: ${lastJoinedPeerId})`);
-                lastJoinedPeerId = data.peerId;
-                offerCreatedForRoom = null;
+    bindEvents() {
+        // Theme toggle
+        this.ui.elements.themeToggle.addEventListener('click', () => {
+            this.ui.toggleTheme();
+        });
+
+        // File selection
+        this.ui.elements.dropZone.addEventListener('click', () => {
+            this.ui.elements.fileInput.click();
+        });
+
+        this.ui.elements.fileInput.addEventListener('change', (e) => {
+            this.handleFileSelection(e.target.files);
+        });
+
+        // Drag and drop
+        this.ui.elements.dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            this.ui.elements.dropZone.classList.add('drag-over');
+        });
+
+        this.ui.elements.dropZone.addEventListener('dragleave', () => {
+            this.ui.elements.dropZone.classList.remove('drag-over');
+        });
+
+        this.ui.elements.dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            this.ui.elements.dropZone.classList.remove('drag-over');
+            this.handleFileSelection(e.dataTransfer.files);
+        });
+
+        // Password toggle visibility
+        this.ui.elements.passwordToggle?.addEventListener('click', () => {
+            const input = this.ui.elements.passwordInput;
+            input.type = input.type === 'password' ? 'text' : 'password';
+            this.ui.elements.passwordToggle.textContent = input.type === 'password' ? '👁️' : '🙈';
+        });
+
+        // Copy link
+        this.ui.elements.copyButton?.addEventListener('click', () => {
+            this.ui.copyToClipboard(this.ui.elements.shareLinkInput.value);
+        });
+
+        // Remove file from list
+        document.addEventListener('click', (e) => {
+            if (e.target.classList.contains('remove-file')) {
+                const fileId = e.target.dataset.id;
+                this.removeFile(fileId);
             }
+        });
 
-            try {
-                webrtcManager.lifecycle.hasRemotePeer = true;
-                webrtcManager.lifecycle.peerJoinedAt = Date.now();
-            } catch {}
+        // Receiver: password submit
+        this.ui.elements.receiverPassword?.addEventListener('input', (e) => {
+            if (e.target.value) {
+                this.ui.elements.downloadButton.disabled = false;
+            }
+        });
 
-            const isExpectedApprovedPeer = pendingAcceptedPeerId && data.peerId === pendingAcceptedPeerId;
-            const isDirectJoinOrRestore = !pendingAcceptedPeerId;
-            const shouldCreateOffer = isExpectedApprovedPeer || isDirectJoinOrRestore;
+        // Download button
+        this.ui.elements.downloadButton?.addEventListener('click', () => {
+            this.startDownload();
+        });
 
-            if (shouldCreateOffer && offerCreatedForRoom !== currentRoomId) {
-                logger.info('APP', `Creating offer for peer: ${data.peerId}`);
-                offerCreatedForRoom = currentRoomId;
-                pendingAcceptedPeerId = null;
-                ui.updateStatus('Peer joined! Creating offer...');
-                setTimeout(() => {
-                    webrtcManager.createOffer();
-                }, 600);
-            } else {
-                logger.debug('APP', 'Peer joined (offer already created)');
-                ui.updateStatus('Peer joined!');
+        // Transfer controls
+        this.ui.elements.pauseButton?.addEventListener('click', () => {
+            this.togglePause();
+        });
+
+        this.ui.elements.cancelButton?.addEventListener('click', () => {
+            this.cancelTransfer();
+        });
+    }
+
+    handleFileSelection(fileList) {
+        if (!fileList || fileList.length === 0) return;
+        
+        logger.log('Files selected:', fileList.length);
+        
+        // Initialize file transfer manager
+        this.fileTransfer = new FileTransfer(this.peerConnection);
+        const files = this.fileTransfer.addFiles(fileList);
+        
+        // Display files in UI
+        this.ui.displaySelectedFiles(files);
+        
+        // Generate and show share link
+        const shareUrl = `${window.location.origin}?peer=${this.peerConnection.peerId}`;
+        this.ui.showShareLink(shareUrl, this.peerConnection.peerId);
+        
+        this.ui.updateStatus('Ready to share - Waiting for receiver...');
+    }
+
+    removeFile(fileId) {
+        if (!this.fileTransfer) return;
+        
+        this.fileTransfer.files = this.fileTransfer.files.filter(f => f.id !== fileId);
+        this.ui.displaySelectedFiles(this.fileTransfer.files);
+        
+        if (this.fileTransfer.files.length === 0) {
+            this.ui.elements.passwordSection.classList.add('hidden');
+            this.ui.elements.linkSection.classList.add('hidden');
+        }
+    }
+
+    onConnectionStateChange(state) {
+        logger.log('Connection state:', state);
+        
+        if (this.mode === 'sender') {
+            this.ui.elements.senderStatus.textContent = this.getStatusText(state);
+            
+            if (state === 'connected' && this.fileTransfer) {
+                // Send metadata when peer connects
+                this.sendMetadataToReceiver();
             }
         } else {
-            logger.info('APP', 'Peer joined as receiver');
-            ui.updateStatus('Connected. Receiving...');
+            this.ui.elements.receiverStatus.textContent = this.getStatusText(state);
         }
-    });
+        
+        this.ui.updateStatus(this.getStatusText(state));
+    }
 
-    socket.on('offer', (data) => {
-        logger.debug('APP', 'Received offer signal');
-        webrtcManager.handleSignal('offer', data);
-    });
-    socket.on('answer', (data) => {
-        logger.debug('APP', 'Received answer signal');
-        webrtcManager.handleSignal('answer', data);
-    });
-    socket.on('candidate', (data) => {
-        logger.debug('APP', 'Received ICE candidate');
-        webrtcManager.handleSignal('candidate', data);
-    });
+    getStatusText(state) {
+        const states = {
+            'ready': 'Ready',
+            'connecting': 'Connecting...',
+            'connected': 'Connected',
+            'disconnected': 'Disconnected',
+            'error': 'Connection Error',
+            'closed': 'Closed'
+        };
+        return states[state] || state;
+    }
 
-    socket.on('app-error', (data) => {
-        const message = data?.message || 'Unknown error';
-        logger.error('APP', `Server error: ${message}`);
+    async sendMetadataToReceiver() {
+        this.password = this.ui.elements.passwordInput?.value || null;
+        await this.fileTransfer.sendMetadata(this.password);
+        this.ui.updateStatus('Metadata sent - Waiting for download request...');
+    }
 
-        if (pendingJoinRole === 'sender' && /room already exists/i.test(message) && currentRoomId) {
-            logger.debug('APP', 'Room exists, joining instead');
-            socket.emit('join-room', currentRoomId);
-            return;
+    async onDataReceived(data) {
+        if (this.mode === 'sender') {
+            // Sender receives download request
+            if (data.type === 'start-download') {
+                logger.info('Receiver requested download');
+                this.startSending();
+            }
+        } else {
+            // Receiver handles incoming data
+            if (!this.fileTransfer) {
+                this.fileTransfer = new FileTransfer(this.peerConnection);
+            }
+            
+            const result = await this.fileTransfer.handleIncomingData(
+                data,
+                this.password
+            );
+            
+            if (result) {
+                this.handleReceiverData(result);
+            }
         }
+    }
 
-        ui.showError(message);
+    handleReceiverData(result) {
+        if (result.type === 'metadata') {
+            this.metadata = result.data;
+            this.ui.showReceiverInfo(result.data);
+            this.ui.updateStatus('Ready to download');
+            logger.info('Metadata received');
+        } else if (result.type === 'chunk') {
+            // Show transfer section when receiving chunks
+            this.ui.showTransferSection(true);
+            this.ui.updateProgress(result.stats);
+        } else if (result.type === 'complete') {
+            logger.info('Transfer complete!');
+            this.ui.showSuccess('Download complete!');
+            this.ui.downloadFiles(result.files);
+            this.ui.updateProgress({ progress: 100, speed: 0, bytesTransferred: 0, totalBytes: 0 });
+        }
+    }
+
+    startDownload() {
+        // Get password if required
+        if (this.metadata.hasPassword) {
+            this.password = this.ui.elements.receiverPassword.value;
+            if (!this.password) {
+                this.ui.showError('Password required');
+                return;
+            }
+        }
+        
+        this.ui.showTransferSection();
+        this.ui.updateStatus('Downloading...');
+        
+        // Request sender to start sending
+        this.peerConnection.send({ type: 'start-download' });
+        
+        logger.info('Download started');
+    }
+
+    async startSending() {
+        this.ui.showTransferSection();
+        this.ui.updateStatus('Sending files...');
+        
+        await this.fileTransfer.startSending(
+            this.password,
+            (stats) => {
+                this.ui.updateProgress(stats);
+            },
+            (stats) => {
+                this.ui.showSuccess('Transfer complete!');
+                logger.info('Send complete. Total:', utils.formatBytes(stats.bytesTransferred));
+            }
+        );
+    }
+
+    togglePause() {
+        if (!this.fileTransfer) return;
+        
+        if (this.fileTransfer.paused) {
+            this.fileTransfer.resume();
+            this.ui.elements.pauseButton.textContent = '⏸️ Pause';
+            this.ui.updateStatus('Transfer resumed');
+        } else {
+            this.fileTransfer.pause();
+            this.ui.elements.pauseButton.textContent = '▶️ Resume';
+            this.ui.updateStatus('Transfer paused');
+        }
+    }
+
+    cancelTransfer() {
+        if (!this.fileTransfer) return;
+        
+        if (confirm('Are you sure you want to cancel the transfer?')) {
+            this.fileTransfer.cancel();
+            this.ui.showTransferSection(false);
+            this.ui.updateStatus('Transfer cancelled');
+        }
+    }
+}
+
+// Initialize app when DOM is ready
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => {
+        window.app = new AirShareApp();
     });
-
-    socket.on('peer-rejected', (data) => {
-        logger.warn('APP', 'Peer rejected connection');
-        ui.showError('Peer rejected the connection');
-    });
-
+} else {
+    window.app = new AirShareApp();
 }

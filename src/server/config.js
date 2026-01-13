@@ -170,7 +170,6 @@ const config = {
     themeColor: /^#[0-9A-Fa-f]{6}$/.test(process.env.THEME_COLOR) ? process.env.THEME_COLOR : '#6366f1',
     donateUrl: sanitizeString(process.env.DONATE_URL, 500),
     termsUrl: sanitizeString(process.env.TERMS_URL, 500),
-    umamiId: sanitizeString(process.env.UMAMI_ID, 100),
     trustProxy: trustProxy,
 
     // Client logging (for production debugging)

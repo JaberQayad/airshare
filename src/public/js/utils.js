@@ -1,56 +1,104 @@
-export function formatBytes(bytes, decimals = 2) {
-    if (bytes === 0) return '0 Bytes';
-    const k = 1024;
-    const dm = decimals < 0 ? 0 : decimals;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
-}
+// AirShare Playground - Clean Architecture
+// Utilities Module
+export const utils = {
+    formatBytes(bytes) {
+        if (bytes === 0) return '0 Bytes';
+        const k = 1024;
+        const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+    },
 
-export function isMobileDevice() {
-    // Check multiple indicators for mobile devices
-    const userAgent = navigator.userAgent || navigator.vendor || window.opera;
-    
-    // Check user agent
-    const mobileRegex = /android|webos|iphone|ipad|ipod|blackberry|iemobile|opera mini/i;
-    const isMobileUA = mobileRegex.test(userAgent.toLowerCase());
-    
-    // Check screen size (mobile typically < 768px)
-    const isSmallScreen = window.innerWidth <= 768;
-    
-    // Check for touch support
-    const isTouchDevice = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
-    
-    // Check device memory (mobile typically has less memory)
-    const hasLowMemory = navigator.deviceMemory ? navigator.deviceMemory <= 4 : false;
-    
-    // Consider it mobile if it matches multiple criteria
-    return isMobileUA || (isSmallScreen && isTouchDevice) || hasLowMemory;
-}
+    formatSpeed(bytesPerSecond) {
+        return this.formatBytes(bytesPerSecond) + '/s';
+    },
 
-export function getAvailableMemory() {
-    // Return approximate available memory in MB
-    if (navigator.deviceMemory) {
-        // deviceMemory returns approximate GB of RAM
-        return navigator.deviceMemory * 1024; // Convert to MB
+    formatTime(seconds) {
+        if (seconds < 60) return Math.round(seconds) + 's';
+        if (seconds < 3600) return Math.round(seconds / 60) + 'm';
+        return Math.round(seconds / 3600) + 'h';
+    },
+
+    generateId() {
+        return Math.random().toString(36).substr(2, 9);
+    },
+
+    async hashPassword(password) {
+        const encoder = new TextEncoder();
+        const data = encoder.encode(password);
+        const hash = await crypto.subtle.digest('SHA-256', data);
+        return Array.from(new Uint8Array(hash))
+            .map(b => b.toString(16).padStart(2, '0'))
+            .join('');
+    },
+
+    async encryptData(data, password) {
+        const encoder = new TextEncoder();
+        const key = await crypto.subtle.digest('SHA-256', encoder.encode(password));
+        const iv = crypto.getRandomValues(new Uint8Array(12));
+        
+        const cryptoKey = await crypto.subtle.importKey(
+            'raw',
+            key,
+            { name: 'AES-GCM' },
+            false,
+            ['encrypt']
+        );
+
+        const encrypted = await crypto.subtle.encrypt(
+            { name: 'AES-GCM', iv },
+            cryptoKey,
+            data
+        );
+
+        return { encrypted, iv };
+    },
+
+    async decryptData(encrypted, iv, password) {
+        const encoder = new TextEncoder();
+        const key = await crypto.subtle.digest('SHA-256', encoder.encode(password));
+        
+        const cryptoKey = await crypto.subtle.importKey(
+            'raw',
+            key,
+            { name: 'AES-GCM' },
+            false,
+            ['decrypt']
+        );
+
+        return await crypto.subtle.decrypt(
+            { name: 'AES-GCM', iv },
+            cryptoKey,
+            encrypted
+        );
     }
-    // Default assumption for unknown devices
-    return 4096; // 4GB default
-}
+};
 
-export function shouldUseStreaming(fileSize) {
-    const isMobile = isMobileDevice();
-    const availableMemoryMB = getAvailableMemory();
-    
-    // Conservative thresholds based on device type
-    if (isMobile || availableMemoryMB <= 2048) {
-        // Mobile or low-memory devices: 50MB threshold
-        return fileSize > 52428800; // 50MB
-    } else if (availableMemoryMB <= 4096) {
-        // Medium-memory devices: 100MB threshold
-        return fileSize > 104857600; // 100MB
-    } else {
-        // High-memory devices: 200MB threshold
-        return fileSize > 209715200; // 200MB
+// Logger Module
+export class Logger {
+    constructor(prefix = '⚡') {
+        this.prefix = prefix;
+    }
+
+    log(message, ...args) {
+        console.log(`${this.prefix} ${message}`, ...args);
+    }
+
+    info(message, ...args) {
+        console.log(`✓ ${message}`, ...args);
+    }
+
+    warn(message, ...args) {
+        console.warn(`⚠️ ${message}`, ...args);
+    }
+
+    error(message, ...args) {
+        console.error(`✗ ${message}`, ...args);
+    }
+
+    debug(message, ...args) {
+        console.log(`🔍 ${message}`, ...args);
     }
 }
+
+export const logger = new Logger();

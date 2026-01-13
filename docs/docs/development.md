@@ -4,34 +4,25 @@ sidebar_position: 4
 
 # Development Guide
 
-Contribute to AirShare and extend it with custom features. This guide covers architecture, development workflow, testing, and deployment.
+Contribute to AirShare and extend it with custom features. This guide covers architecture, development workflow, and deployment.
 
 ## 📁 Project Structure
 
 ```
 airshare/
 ├── src/
-│   ├── public/                 # Frontend files
-│   │   ├── index.html         # HTML shell
+│   ├── public/                 # Frontend files (served statically)
+│   │   ├── index.html         # Main HTML file
 │   │   ├── css/
 │   │   │   └── styles.css     # Styling (light/dark themes)
 │   │   └── js/
-│   │       ├── app.js         # Main orchestration + event listeners
-│   │       ├── ui.js          # UI state management + DOM updates
-│   │       ├── webrtc.js      # Peer connection + streaming + backpressure
-│   │       ├── crc32.js       # CRC32 checksum validation (v2.0+)
-│   │       └── utils.js       # Helper functions (formatBytes, etc)
+│   │       ├── app.js         # Main application orchestration
+│   │       ├── ui-manager.js  # UI state & DOM updates
+│   │       ├── peer-connection.js  # PeerJS wrapper
+│   │       ├── file-transfer.js    # Transfer logic with encryption
+│   │       └── utils.js       # Helper functions (logging, encryption, formatting)
 │   └── server/
-│       ├── index.js           # Express app + Socket.IO setup
-│       ├── config.js          # Environment variable parsing
-│       ├── socket.js          # Signaling handlers + room management (v2.0+)
-│       └── logger.js          # Logging utility
-├── plans/                      # Planning & documentation (gitignored)
-│   ├── TEST_PLAN.md           # 12 test scenarios
-│   ├── ARCHITECTURE.md        # Design decisions
-│   ├── LIMITATIONS.md         # Known issues & mitigations
-│   ├── TASKS.md               # Implementation checklist
-│   └── ENV_REFERENCE.md       # Tuning guide
+│       └── index.js           # Express server (static file serving)
 ├── docs/                       # Docusaurus documentation site
 │   └── docs/
 │       ├── intro.md           # Getting started
@@ -61,7 +52,7 @@ npm install
 # Copy example environment
 cp .env.example .env
 
-# Start development server (auto-reload)
+# Start development server
 npm run dev
 
 # Open browser: http://localhost:3000
@@ -87,489 +78,297 @@ npm run dev
 ### Frontend Data Flow
 
 ```
-UI Events (File select, link click)
+User Actions (File select, link share)
     ↓
-app.js (Orchestration)
+app.js (Main orchestration)
     ↓ delegates to
 ┌────────────────────┐
-│  webrtc.js         │  ← Peer connection, streaming
-│  ui.js             │  ← DOM updates, prompts
-│  utils.js          │  ← Helpers
-│  crc32.js          │  ← Integrity validation
+│  ui-manager.js     │  ← DOM updates, user interactions
+│  peer-connection.js│  ← PeerJS wrapper for WebRTC
+│  file-transfer.js  │  ← File chunking, encryption, transfer logic
+│  utils.js          │  ← Logger, encryption, formatting utilities
 └────────────────────┘
     ↓ communicates via
-Socket.IO + WebRTC DataChannel
-    ↓
-Server signaling relay (socket.js)
-    ↓
-Remote peer (same flow in reverse)
+PeerJS Cloud (0.peerjs.com)
 ```
 
-### Backend Signaling Flow
+### Key Components
 
-```
-Client connects via Socket.IO
-    ↓
-socket.js receives event
-    ↓
-Validate: Is peer in room? Is payload <64KB?
-    ↓
-If valid: Relay to peer | If invalid: Send error
-    ↓
-Peer receives offer/answer/candidate
-    ↓
-WebRTC connection established
-    ↓
-File transfer via DataChannel (P2P)
-```
+#### 1. **app.js** - Application Orchestration
+- Initializes PeerJS connection
+- Handles sender/receiver mode detection
+- Manages file selection and transfer initiation
+- Coordinates between UI and transfer logic
 
-### Enterprise Features (v2.0+)
+#### 2. **peer-connection.js** - WebRTC Abstraction
+- Wraps PeerJS library
+- Handles peer connection lifecycle
+- Manages data channel events
+- Provides simple API for sending/receiving data
 
-```
-Large File (>200MB)
-    ↓
-initializeReceiver() checks size
-    ↓
-Try File System Access API (Chrome/Edge)
-    ├─ Success → Stream to disk
-    └─ Failure → Fallback to in-memory + warning
+#### 3. **file-transfer.js** - Transfer Logic
+- Chunks files into 16KB pieces
+- Encrypts each chunk with AES-256-GCM
+- Tracks transfer progress and statistics
+- Handles pause/resume/cancel functionality
 
-Backpressure
-    ├─ Send loop checks bufferedAmount
-    ├─ If > 1MB → Pause, wait for bufferedamountlow event
-    ├─ If backpressure count > 5 → Reduce chunk size 20%
-    └─ If stable → Increase chunk size 10%
+#### 4. **ui-manager.js** - UI State Management
+- Updates progress displays
+- Manages file list UI
+- Handles password dialogs
+- Updates connection status
 
-Room Management
-    ├─ Create room: Check duplicate, store in registry
-    ├─ Join room: Check exists, enforce max 2 peers
-    ├─ Every 10min: Clean rooms older than 30min TTL
-    └─ All signals: Validate payload <64KB, check membership
-```
+#### 5. **utils.js** - Shared Utilities
+- Logger with log levels
+- Encryption/decryption functions
+- File size formatting
+- Speed and ETA calculations
 
 ---
 
-## 🔧 Core Components
+## 🔧 Development Workflow
 
-### src/public/js/webrtc.js
-**Purpose**: Manage WebRTC peer connections, file transfers, and streaming
-
-**Key Objects**:
-- `WebRTCManager` - Main class
-- `sendState` - Tracks sender progress (offset, chunk size, backpressure)
-- `receiveState` - Tracks receiver progress (chunks, stream writer)
-- `stats` - Transfer statistics (speed, ETA)
-
-**Key Methods**:
-```javascript
-// Connection management
-createPeerConnection()           // Initialize peer + data channel
-createOffer()                    // SDP offer creation
-handleAnswer(sdp)                // Process remote answer
-
-// File transfer (event-driven)
-continueSendFile()               // Async coroutine: read & send chunks
-handleChunkData(buffer)          // Validate CRC32, write to disk/memory
-updateProgressStats()            // Throttled progress updates
-
-// Streaming
-initializeReceiver()             // Decide: stream or in-memory
-initializeStreaming()            // File System Access API setup
-handleStreamWrite(chunk)         // Write to file stream
-```
-
-**Backpressure Algorithm**:
-```javascript
-// In continueSendFile():
-if (dataChannel.bufferedAmount > config.bufferHighWater) {
-  sendState.paused = true
-  return  // Wait for bufferedamountlow event
-}
-
-// On bufferedamountlow event:
-if (sendState.paused && sendState.file) {
-  sendState.paused = false
-  continueSendFile()  // Resume
-}
-
-// Adaptive sizing:
-sendState.backpressureCount > 5
-  → reduce: currentChunkSize *= 0.8
-  → bound: [MIN_CHUNK_SIZE, MAX_CHUNK_SIZE]
-```
-
----
-
-### src/server/socket.js
-**Purpose**: WebSocket signaling relay with room management
-
-**Room Registry**:
-```javascript
-roomRegistry: Map<roomId, {
-  createdAt: timestamp,
-  peers: Set<socketId>
-}>
-```
-
-**Key Handlers**:
-```javascript
-// Room lifecycle
-on('create-room')    // Create + add to registry
-on('join-room')      // Validate exists, enforce max 2 peers
-on('leave-room')     // Remove peer from room
-
-// Signaling
-on('offer')          // Relay SDP to peer
-on('answer')         // Relay SDP to peer
-on('candidate')      // Relay ICE candidate
-
-// Validation
-isPayloadValid(data) // Check size <64KB
-checkMembership()    // Verify sender is in room
-
-// Cleanup
-TTL cleanup interval // Every 10min: remove old rooms
-```
-
----
-
-### src/public/js/ui.js
-**Purpose**: DOM management and user interaction
-
-**Key Methods**:
-```javascript
-showConnectionPrompt(peerId, onAccept, onReject)  // Accept/reject dialog
-showError(message)                                 // Error display
-showDownload(file)                                 // Download success
-showProgress(percent, speed, eta)                  // Progress updates
-```
-
-**State Properties**:
-```javascript
-fileSelectCallback         // Listener for file selection
-downloadCallback           // Listener for file download
-errorCallback             // Listener for errors
-acceptConnectionCallback  // Listener for connection prompts
-```
-
----
-
-### src/public/js/crc32.js
-**Purpose**: Per-chunk integrity validation
-
-**Exports**:
-```javascript
-calculateCRC32(buffer)    // Uint8Array → Uint32
-crc32ToHex(crc32)        // Uint32 → "xxxxxxxx"
-CRC32_TABLE              // 256-entry lookup table
-```
-
-**Usage**:
-```javascript
-// Sender: wrap chunk
-const crc32 = calculateCRC32(chunkData)
-const crc32Buffer = new Uint8Array([
-  crc32 & 0xFF,
-  (crc32 >> 8) & 0xFF,
-  (crc32 >> 16) & 0xFF,
-  (crc32 >> 24) & 0xFF
-])
-dataChannel.send(Buffer.concat([crc32Buffer, chunkData]))
-
-// Receiver: validate
-const receivedCrc32 = buffer.readUInt32LE(0)
-const calculatedCrc32 = calculateCRC32(buffer.slice(4))
-if (receivedCrc32 !== calculatedCrc32) {
-  console.error('CRC32 mismatch - corruption detected')
-}
-```
-
----
-
-### src/server/config.js
-**Purpose**: Parse environment variables with defaults
-
-**Structure**:
-```javascript
-module.exports = {
-  // Server
-  port: process.env.PORT || 3000,
-  nodeEnv: process.env.NODE_ENV || 'development',
-  maxFileSize: parseInt(process.env.MAX_FILE_SIZE || '107374182400'),
-  
-  // Streaming & Backpressure
-  maxInMemorySize: parseInt(process.env.MAX_IN_MEMORY_SIZE || '209715200'),
-  defaultChunkSize: parseInt(process.env.DEFAULT_CHUNK_SIZE || '131072'),
-  minChunkSize: parseInt(process.env.MIN_CHUNK_SIZE || '32768'),
-  maxChunkSize: parseInt(process.env.MAX_CHUNK_SIZE || '262144'),
-  bufferHighWater: parseInt(process.env.BUFFER_HIGH_WATER || '1048576'),
-  bufferLowWater: parseInt(process.env.BUFFER_LOW_WATER || '262144'),
-  
-  // Signaling & Room Management
-  maxPeersPerRoom: parseInt(process.env.MAX_PEERS_PER_ROOM || '2'),
-  roomTtlMs: parseInt(process.env.ROOM_TTL_MS || '1800000'),
-  maxSignalPayloadBytes: parseInt(process.env.MAX_SIGNAL_PAYLOAD_BYTES || '65536'),
-  
-  // ICE servers, UI customization, etc.
-}
-```
-
----
-
-## 🛠️ Common Development Tasks
-
-### Adding a New Configuration Option
-
-1. **Add to `src/server/config.js`**:
-   ```javascript
-   module.exports = {
-     myNewOption: process.env.MY_NEW_OPTION || 'default-value'
-   }
-   ```
-
-2. **Document in `docs/docs/configuration.md`**:
-   - Add to appropriate category
-   - Include default, type, example, tuning notes
-
-3. **Update `.env.example`**:
-   ```bash
-   # Section Name
-   MY_NEW_OPTION=default-value
-   ```
-
-4. **Use in code**:
-   ```javascript
-   const config = require('./config')
-   console.log(config.myNewOption)
-   ```
-
-### Modifying the UI
-
-1. **Styling**: Edit `src/public/css/styles.css`
-   - Use CSS custom properties for colors (theme-aware)
-   - Mobile-first responsive design
-
-2. **Functionality**: Edit `src/public/js/ui.js`
-   - Update DOM directly (no framework)
-   - Emit events for app.js to handle
-
-3. **Test**: Open `http://localhost:3000` with `npm run dev`
-   - Changes auto-reload
-   - Check browser console for errors
-
-### Adding WebRTC Features
-
-1. **Update `src/public/js/webrtc.js`**:
-   ```javascript
-   class WebRTCManager {
-     myNewFeature() {
-       // Implement feature
-     }
-   }
-   ```
-
-2. **Emit events for UI**:
-   ```javascript
-   this.eventTarget.dispatchEvent(
-     new CustomEvent('feature-event', { detail: data })
-   )
-   ```
-
-3. **Add to `src/public/js/app.js`**:
-   ```javascript
-   webrtcManager.eventTarget.addEventListener('feature-event', (e) => {
-     // Handle event
-   })
-   ```
-
-### Adding Server Routes
-
-1. **Edit `src/server/index.js`**:
-   ```javascript
-   app.get('/api/status', (req, res) => {
-     res.json({ status: 'ok', rooms: roomRegistry.size })
-   })
-   ```
-
-2. **Add rate limiting if needed**:
-   ```javascript
-   app.get('/api/protected', limiter, (req, res) => { ... })
-   ```
-
----
-
-## ✅ Testing
-
-### Manual Testing Checklist
-
-- [ ] **Small file transfer** (50MB): Should complete in `<5 sec`
-- [ ] **Large file transfer** (1GB): Should stream to disk on Chrome/Edge
-- [ ] **Connection prompt**: Sender sees accept/reject prompt
-- [ ] **Backpressure**: Throttle network (DevTools), observe adaptive chunk sizing
-- [ ] **Max 2 peers**: 3rd peer gets "Room is full" error
-- [ ] **Room TTL**: Wait `>30 min` or modify TTL config, old rooms cleaned up
-- [ ] **CRC32 validation**: Monitor for checksum mismatches (should be none)
-- [ ] **Error handling**: Network drop shows clear error message
-- [ ] **Progress display**: Shows speed + ETA, updates smoothly
-- [ ] **Dark mode**: Theme toggle works on both light & dark
-- [ ] **Mobile**: Works on iOS/Android browsers
-- [ ] **Behind proxy**: TRUSTED_DOMAINS=1 enables correct rate limiting
-
-### Browser Compatibility
-
-| Browser | Version | Notes |
-|---------|---------|-------|
-| Chrome | 90+ | Full support, streaming works |
-| Edge | 90+ | Full support, streaming works |
-| Firefox | 88+ | Works, streaming uses fallback |
-| Safari | 14+ | Works, streaming uses fallback |
-| Mobile | Latest | Mobile works, streaming limited |
-
-### Performance Testing
+### Running Locally
 
 ```bash
-# Memory profiling (Chrome DevTools)
-1. Open DevTools → Memory tab
-2. Take heap snapshot before transfer
-3. Start large file transfer
-4. Take heap snapshot during transfer
-5. Compare: Should not exceed 300MB
+# Development mode (auto-reload)
+npm run dev
 
-# Network throttling (Chrome DevTools)
-1. DevTools → Network tab
-2. Set throttle to "Slow 3G"
-3. Try large file transfer
-4. Watch chunk size adapt (should reduce from 256KB)
+# Production mode
+npm start
 
-# CPU monitoring (Chrome DevTools)
-1. Open DevTools → Performance tab
-2. Record transfer
-3. Check CPU usage: Should be <2% during transfer
-4. Verify no long tasks (>50ms)
+# Build documentation
+npm run build
 ```
+
+### Making Changes
+
+**1. Frontend Changes**
+- Edit files in `src/public/`
+- Refresh browser to see changes
+- No build step required (vanilla JS)
+
+**2. Server Changes**
+- Edit `src/server/index.js`
+- Restart server with `npm start`
+
+**3. Documentation Changes**
+- Edit files in `docs/docs/`
+- Run `npm run build` to rebuild
+- Preview at `docs/build/index.html`
+
+### Testing Locally
+
+1. **Single Machine Test:**
+   - Open `http://localhost:3000` in two browser tabs
+   - Select files in first tab (sender)
+   - Copy link to second tab (receiver)
+   - Verify transfer completes
+
+2. **Network Test:**
+   - Run server on one machine
+   - Access from another device on same network
+   - Test with different file sizes
+
+3. **Password Test:**
+   - Enable password protection
+   - Verify receiver must enter correct password
+   - Test wrong password rejection
 
 ---
 
-## 🐳 Building & Deployment
+## 🐳 Docker Development
 
-### Build Docker Image
+### Building Custom Image
 
 ```bash
+# Build image
 docker build -t airshare:dev .
-docker run -p 3000:3000 \
-  -e NODE_ENV=development \
+
+# Run with custom config
+docker run -d \
+  -p 3000:3000 \
+  -e APP_TITLE="Dev AirShare" \
+  --name airshare-dev \
   airshare:dev
+
+# View logs
+docker logs -f airshare-dev
+
+# Stop and remove
+docker stop airshare-dev
+docker rm airshare-dev
 ```
 
-### Run with Docker Compose
+### Docker Compose Development
 
 ```bash
+# Start services
 docker-compose up -d
 
 # View logs
-docker-compose logs -f airshare
+docker-compose logs -f
 
-# Stop
+# Restart after code changes
+docker-compose restart
+
+# Stop services
 docker-compose down
 ```
 
-### Push to Container Registry
+---
 
-```bash
-# Build & tag
-docker build -t your-registry/airshare:v2.0.0 .
+## 📚 Adding Features
 
-# Push
-docker push your-registry/airshare:v2.0.0
+### Example: Add File Type Filtering
 
-# Deploy (your orchestration)
-docker run your-registry/airshare:v2.0.0
+**1. Update UI (index.html)**
+```html
+<input type="file" id="fileInput" accept=".pdf,.doc,.docx" multiple>
 ```
+
+**2. Add Validation (app.js)**
+```javascript
+const allowedTypes = ['.pdf', '.doc', '.docx'];
+const isValidType = file => {
+    const ext = '.' + file.name.split('.').pop().toLowerCase();
+    return allowedTypes.includes(ext);
+};
+
+// In handleFileSelect:
+const validFiles = files.filter(isValidType);
+if (validFiles.length < files.length) {
+    UIManager.showError('Some files were rejected (only PDF/DOC allowed)');
+}
+```
+
+### Example: Self-Host PeerJS Server
+
+**1. Install PeerJS Server:**
+```bash
+npm install -g peer
+```
+
+**2. Run PeerJS Server:**
+```bash
+peerjs --port 9000 --key myapp --path /peerjs
+```
+
+**3. Update Configuration:**
+```env
+PEERJS_HOST=localhost
+PEERJS_PORT=9000
+PEERJS_SECURE=false
+```
+
+**4. Test Connection:**
+- Restart AirShare
+- Verify console shows connection to local PeerJS server
 
 ---
 
-## 📚 Documentation Development
+## 🚢 Deployment
 
-Edit documentation in `docs/docs/`:
+### Environment Variables
+
+Set these for production:
 
 ```bash
-# Start dev server (live reload)
-cd docs
-npm run start
-
-# Build production site
-npm run build
-
-# Deploy to GitHub Pages (if enabled)
-npm run deploy
+NODE_ENV=production
+PORT=3000
+PEERJS_HOST=your-peerjs-server.com
+PEERJS_PORT=443
+PEERJS_SECURE=true
 ```
 
-Documentation is built with [Docusaurus](https://docusaurus.io/). Edit Markdown files and changes appear instantly.
+### Production Checklist
+
+- [ ] Set `NODE_ENV=production`
+- [ ] Use HTTPS (required for WebRTC)
+- [ ] Self-host PeerJS server (recommended)
+- [ ] Configure proper firewall rules
+- [ ] Set up monitoring/logging
+- [ ] Test on multiple browsers
+- [ ] Test on mobile devices
 
 ---
 
-## 🔍 Debugging
-
-### Server Logs
-
-```bash
-# Enable debug logging
-DEBUG=* npm start
-
-# Or selectively:
-DEBUG=socket.io npm start
-```
+## 🐛 Debugging
 
 ### Browser Console
 
-1. Open DevTools (F12)
-2. Look for errors/warnings in Console tab
-3. Check Network tab for WebSocket/HTTP issues
-4. Check Application tab for storage/cookies
+Check console for errors:
+```javascript
+// Enable verbose logging
+Logger.setLogLevel('debug');
+
+// Monitor PeerJS events
+peer.on('error', console.error);
+connection.on('error', console.error);
+```
 
 ### Common Issues
 
-| Issue | Debug Steps |
-|-------|------------|
-| Peer connection fails | Check browser console, verify ICE_SERVERS, check firewall |
-| File transfer hangs | Check Network tab (DevTools), verify backpressure logic |
-| UI not updating | Check browser console, verify event listeners, try hard refresh |
-| Memory leak | Heap snapshot comparison (DevTools Memory tab) |
-| Rate limiting blocks | Set TRUSTED_DOMAINS=1, verify X-Forwarded-For headers |
+**Connection Fails:**
+- Check PeerJS server is accessible
+- Verify HTTPS is enabled (required for WebRTC)
+- Check browser console for errors
+- Try different browser
 
----
+**Slow Transfers:**
+- Check network connection quality
+- Increase `CHUNK_SIZE` for faster networks
+- Verify no VPN or proxy interfering
 
-## 🚢 Deployment Checklist
-
-Before pushing to production:
-
-- [ ] Run full test suite (manual or automated)
-- [ ] Performance benchmarks acceptable (speed, memory, CPU)
-- [ ] Security review (no hardcoded secrets, HTTPS enabled)
-- [ ] Documentation updated
-- [ ] .env vars documented & validated
-- [ ] Docker image tested
-- [ ] Rollback plan prepared
-- [ ] Monitoring & alerting setup
+**Memory Issues:**
+- Reduce number of concurrent transfers
+- Use smaller chunk sizes
+- Close unused browser tabs
 
 ---
 
 ## 🤝 Contributing
 
+We welcome contributions! Here's how:
+
 1. **Fork** the repository
-2. **Create** a feature branch: `git checkout -b feature/my-feature`
-3. **Implement** your changes
-4. **Test** thoroughly (manual + automated)
-5. **Commit** with clear messages: `git commit -m 'feat: add my feature'`
-6. **Push**: `git push origin feature/my-feature`
-7. **Create** Pull Request with description
+2. **Create** a feature branch: `git checkout -b feature/amazing-feature`
+3. **Commit** your changes: `git commit -m 'Add amazing feature'`
+4. **Push** to branch: `git push origin feature/amazing-feature`
+5. **Open** a Pull Request
+
+### Code Style
+
+- Use ES6+ features
+- Follow existing formatting
+- Add comments for complex logic
+- Keep functions small and focused
+- Write descriptive variable names
+
+### Pull Request Guidelines
+
+- Describe what your PR does
+- Include screenshots for UI changes
+- Test on multiple browsers
+- Update documentation if needed
 
 ---
 
 ## 📖 Additional Resources
 
-- [WebRTC API Docs](https://developer.mozilla.org/en-US/docs/Web/API/WebRTC_API)
-- [Socket.IO Guide](https://socket.io/docs/)
-- [Express.js Docs](https://expressjs.com/)
-- [Node.js Best Practices](https://github.com/goldbergyoni/nodebestpractices)
-- [Docker Docs](https://docs.docker.com/)
+- [PeerJS Documentation](https://peerjs.com/docs/)
+- [WebRTC API](https://developer.mozilla.org/en-US/docs/Web/API/WebRTC_API)
+- [Web Crypto API](https://developer.mozilla.org/en-US/docs/Web/API/Web_Crypto_API)
+- [Express.js Guide](https://expressjs.com/en/guide/routing.html)
+
+---
+
+## 💬 Support
+
+- **Issues**: [GitHub Issues](https://github.com/jaberio/airshare/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/jaberio/airshare/discussions)
+- **Email**: support@airshare.dev
+
+---
+
+Happy coding! 🚀

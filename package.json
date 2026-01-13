@@ -1,7 +1,7 @@
 {
     "name": "airshare",
-    "version": "1.0.0",
-    "description": "A clean, modular peer-to-peer file transfer app",
+    "version": "2.0.0",
+    "description": "PeerJS-based peer-to-peer file sharing with multiple files, encryption, and pause/resume",
     "main": "src/server/index.js",
     "scripts": {
         "start": "node src/server/index.js",
@@ -12,12 +12,9 @@
     },
     "dependencies": {
         "cors": "^2.8.5",
-        "dns-sync": "^0.2.1",
         "dotenv": "^16.3.1",
         "express": "^4.18.2",
-        "express-rate-limit": "^8.2.1",
-        "helmet": "^8.1.0",
-        "socket.io": "^4.7.2"
+        "helmet": "^8.1.0"
     },
     "devDependencies": {
         "eslint": "^9.17.0",

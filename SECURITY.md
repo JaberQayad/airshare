@@ -18,12 +18,6 @@ AirShare implements multiple layers of security to protect users and deployments
 
 ### 1. **Network Security**
 
-#### Rate Limiting
-- **HTTP endpoints**: 100 requests per 15 minutes per IP
-- **WebSocket events**: 10 events per second per connection
-- Automatic IP detection with proper proxy support via `TRUSTED_DOMAINS`
-- Development environments (localhost) skip rate limiting
-
 #### CORS (Cross-Origin Resource Sharing)
 - Same-origin only by default (most secure)
 - Configurable via `CORS_ORIGINS` environment variable
@@ -37,39 +31,37 @@ AirShare implements multiple layers of security to protect users and deployments
 
 ### 2. **WebRTC P2P Security**
 
-#### Room Management
-- Maximum 2 peers per room (1 sender + 1 receiver)
-- Room ID validation (alphanumeric, 1-64 characters)
-- Room TTL of 30 minutes (auto-cleanup)
-- Pending join request system with sender approval
-
-#### Signaling Validation
-- Payload size limits (64KB default, configurable)
-- Room membership verification before relaying signals
-- Input validation for all WebSocket events
-- Rate limiting on signaling events
+#### PeerJS Connection
+- Direct peer-to-peer connections via PeerJS library
+- Uses cloud signaling server (0.peerjs.com) by default
+- Self-hosting PeerJS server recommended for production
+- Peer ID validation and connection management
 
 #### Data Transfer
 - Peer-to-peer only (server never stores files)
-- End-to-end encryption in transit (WebRTC native)
-- CRC32 integrity validation
-- Chunk size bounds enforcement (1KB - 10MB)
+- Client-side encryption with AES-256-GCM before transfer
+- Password protection for shared links (optional)
+- Per-chunk encryption for large files
+- Chunk size: 16KB (configurable via CHUNK_SIZE)
+
+#### Multiple File Support
+- Transfer multiple files simultaneously
+- Individual progress tracking per file
+- Pause/resume/cancel controls
+- Real-time speed and ETA display
 
 ### 3. **Input Validation & Sanitization**
 
 #### Configuration Validation
-- All numeric config values validated with min/max bounds
 - Port: 1-65535
-- Chunk sizes: 1KB - 10MB
-- Buffer sizes: 1KB - 100MB
-- Room TTL: 1 minute - 24 hours
-- Max peers: 2-10
+- Chunk size: Configurable (default 16KB)
+- Max file size: Configurable (default 100GB)
 
 #### String Sanitization
 - `APP_TITLE`: Max 100 characters, sanitized
 - `THEME_COLOR`: Must match hex color regex (#RRGGBB)
 - URLs: Max 500 characters, sanitized
-- Room IDs: Alphanumeric with dashes/underscores only
+- Peer IDs: Generated and validated by PeerJS
 
 #### XSS Prevention
 - `textContent` used instead of `innerHTML` for user-controlled values
@@ -92,25 +84,19 @@ AirShare implements multiple layers of security to protect users and deployments
 - `Referrer-Policy` - Controls referrer information
 
 #### Configuration Endpoint Security
-- `/config` endpoint filters sensitive server-side config
-- Only exposes client-safe values:
-  - ICE servers
-  - Chunk/buffer sizes
-  - UI branding (sanitized)
-- Hides internal settings:
-  - `trustProxy`
-  - `corsOrigins`
-  - `port`
-  - Internal thresholds
+- Environment variables control application behavior
+- Server exposes minimal configuration to client
+- Sensitive values never exposed:
+  - Server port
+  - Internal settings
+  - PeerJS credentials (if self-hosted)
 
 ### 5. **Dependency Security**
 
 #### Production Dependencies
-- `express` - Minimal, well-maintained
-- `socket.io` - Latest stable version
+- `express` - Minimal, well-maintained web server
 - `helmet` - Security headers middleware
 - `cors` - CORS handling
-- `express-rate-limit` - Rate limiting
 - `dotenv` - Environment variable loading
 
 #### Security Practices
@@ -122,15 +108,14 @@ AirShare implements multiple layers of security to protect users and deployments
 ### 6. **Logging & Monitoring**
 
 #### Structured Logging
-- All security events logged (rate limits, invalid inputs)
-- Socket connection/disconnection tracking
-- Room lifecycle tracking
-- Signal relay logging with payload size
+- Server startup and configuration logged
+- Request logging with standard middleware
+- Client-side logging for debugging (configurable)
 
 #### No Sensitive Data Logging
 - File contents never logged
-- User IP addresses truncated/hashed in production
-- Authentication tokens (if added) never logged
+- No user tracking or analytics (Umami removed)
+- Encryption keys never logged
 
 ---
 
@@ -139,39 +124,36 @@ AirShare implements multiple layers of security to protect users and deployments
 ### Production Checklist
 
 - [ ] Set `NODE_ENV=production`
-- [ ] Use HTTPS (reverse proxy with SSL certificate)
-- [ ] Configure `TRUSTED_DOMAINS` if behind reverse proxy
-- [ ] Set restrictive `CORS_ORIGINS` or leave unset
+- [ ] Use HTTPS (required for WebRTC)
+- [ ] Self-host PeerJS server (recommended for production)
+- [ ] Set restrictive `CORS_ORIGINS` or leave default
 - [ ] Use strong firewall rules
 - [ ] Keep dependencies updated (`npm audit`, `npm update`)
-- [ ] Monitor logs for suspicious activity
+- [ ] Monitor logs for errors
 - [ ] Set reasonable `MAX_FILE_SIZE` limit
-- [ ] Configure rate limiting thresholds for your use case
+- [ ] Configure `CHUNK_SIZE` for your network conditions
 
 ### Reverse Proxy Configuration
 
-When using Nginx/Apache/Cloudflare:
+When using Nginx for HTTPS termination:
 
-```env
-TRUSTED_DOMAINS=1  # Trust first proxy
-# or
-TRUSTED_DOMAINS=example.com  # Trust specific domain
-```
-
-#### Nginx Example
 ```nginx
-location / {
-    proxy_pass http://localhost:3000;
-    proxy_http_version 1.1;
-    proxy_set_header Upgrade $http_upgrade;
-    proxy_set_header Connection 'upgrade';
-    proxy_set_header Host $host;
-    proxy_set_header X-Real-IP $remote_addr;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    proxy_set_header X-Forwarded-Proto $scheme;
-    proxy_cache_bypass $http_upgrade;
+server {
+    listen 443 ssl http2;
+    server_name your-domain.com;
+
+    ssl_certificate /path/to/cert.pem;
+    ssl_certificate_key /path/to/key.pem;
+
+    location / {
+        proxy_pass http://localhost:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
 }
-```
 
 ### Environment Variable Security
 
@@ -194,15 +176,17 @@ Use secrets management in production:
 
 ## Known Limitations
 
-1. **Public TURN Servers**: Default configuration uses public TURN servers which have limited reliability. For production, use your own TURN server.
+1. **Cloud PeerJS Server**: Default configuration uses free cloud PeerJS server (0.peerjs.com). For production, self-host PeerJS server for better reliability and control.
 
-2. **Browser-based**: Security depends on browser WebRTC implementation. Keep browsers updated.
+2. **Browser-based**: Security depends on browser WebRTC and Web Crypto API implementation. Keep browsers updated.
 
-3. **No Authentication**: AirShare has no built-in user authentication. Anyone with a room link can connect (by design for simplicity).
+3. **No Built-in Authentication**: AirShare uses optional password protection but has no user accounts. Anyone with the peer link can attempt to connect.
 
-4. **Rate Limiting Bypass**: Determined attackers can bypass IP-based rate limiting with proxies/VPNs. For high-security deployments, add additional authentication layers.
+4. **Client-side Encryption**: Encryption happens in the browser. While AES-256-GCM is strong, it depends on proper browser implementation.
 
 5. **File Validation**: Server never sees file contents (P2P transfer). Receivers should scan files with antivirus before opening.
+
+6. **NAT Traversal**: WebRTC may fail through restrictive firewalls. Consider TURN server for corporate environments.
 
 ---
 
@@ -228,8 +212,9 @@ We take security seriously. When security issues are discovered:
 - Users control data sharing (sender must approve receiver)
 
 ### Data Retention
-- Room data: Auto-deleted after TTL (default 30 minutes)
-- Logs: Configure retention based on your policies
+- No persistent data storage (stateless server)
+- PeerJS handles connection state (ephemeral)
+- Logs: Standard HTTP access logs only
 - No file content or metadata stored
 
 ---
@@ -240,4 +225,4 @@ For security concerns: Create a private security advisory on GitHub or contact t
 
 For general questions: Open a public issue on GitHub.
 
-**Last Updated**: January 12, 2026
+**Last Updated**: January 13, 2026

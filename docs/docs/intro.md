@@ -1,74 +1,46 @@
----
-sidebar_position: 1
----
-
 # Introduction
 
-AirShare is a **production-ready peer-to-peer file transfer application** that lets you share files directly between browsers using WebRTC. Files transfer directly between peers—we never store your files on our servers.
+AirShare is a **peer-to-peer file transfer application** that lets you share files directly between browsers using WebRTC. Files transfer directly between peers—we never store your files on our servers.
 
 ## ✨ Features
 
 - **🛡️ Peer-to-Peer** - Files transfer directly between browsers using WebRTC, no server storage
-- **♾️ No Size Limits** - Transfer files of any size (for desktop/laptops) with smart streaming
-- **🔒 Secure** - End-to-end encryption in transit (WebRTC TLS 1.3) + per-chunk integrity verification
+- **♾️ Multiple Files** - Transfer multiple files simultaneously with individual progress tracking
+- **🔒 Secure** - End-to-end encryption with AES-256-GCM before transfer
+- **🔐 Password Protection** - Optional password protection for shared links
 - **⚡ Fast & Simple** - Drag and drop, share the link, and you're done
+- **⏸️ Pause/Resume** - Pause and resume file transfers anytime
 - **🌙 Dark Mode** - Premium UI with native dark mode support
 - **🐳 Docker Ready** - Production-optimized containerized deployments
-- **📊 Enterprise Ready** - Room management, backpressure control, signaling hardening (v2.0+)
 
 ## How It Works
 
-1. **Sender** uploads files through the web interface
-2. **System** generates a shareable link containing the room ID
-3. **Receiver** opens the link in their browser
-4. **Sender** approves the incoming connection via prompt
-5. **Files** transfer directly peer-to-peer using WebRTC DataChannel
-6. **No server storage** - your files are private and never stored
-
-## 🎯 Enterprise Features (v2.0+)
-
-### 📁 Large File Streaming
-- Files >200MB automatically stream to disk (File System Access API)
-- Eliminates RAM exhaustion on large transfers
-- Graceful fallback to in-memory for unsupported browsers
-
-### 🚀 Smart Backpressure
-- Event-driven flow control (no CPU-wasting sleep loops)
-- Adaptive chunk sizing (32KB-256KB) based on network conditions
-- Automatic pause/resume when DataChannel buffers fill
-
-### 🔐 Signaling Hardening
-- Room time-to-live (TTL) cleanup prevents memory leaks
-- Max 2 peers per room (1 sender + 1 receiver) for security & scalability
-- Payload size validation (64KB limit) prevents DoS attacks
-- CRC32 per-chunk validation for transfer integrity
-
-### 💬 Better UX
-- Connection prompts (approve/reject incoming transfers)
-- Real-time speed & ETA display
-- Clear error messages for all failure scenarios
-- Progress throttling prevents UI thrashing
+1. **Sender** selects files and optionally sets a password
+2. **System** generates a shareable link with peer ID
+3. **Receiver** opens the link and enters password (if required)
+4. **Files** transfer directly peer-to-peer using WebRTC
+5. **No server storage** - your files are encrypted and private
 
 ## Technology Stack
 
 | Layer | Technology | Purpose |
 |-------|-----------|---------|
 | **Frontend** | HTML5, CSS3, Vanilla JS (ES Modules) | Fast, lightweight UI |
-| **Backend** | Node.js, Express | Scalable signaling server |
-| **Real-time** | Socket.IO (signaling), WebRTC (data) | Peer discovery & transfer |
-| **Security** | Helmet, CORS, Rate Limiting | Defense-in-depth |
-| **Enterprise** | CRC32, Config validation, Room registry | Reliability & operations |
+| **Backend** | Node.js, Express | Static file serving |
+| **Real-time** | PeerJS | WebRTC abstraction with cloud signaling |
+| **Encryption** | Web Crypto API (AES-256-GCM) | Client-side file encryption |
+| **Security** | Helmet, CORS | Defense-in-depth |
 
 ## Quick Start
 
 ### Docker (Recommended)
 ```bash
 docker run -d \
-  -p 4111:3000 \
+  -p 3000:3000 \
   --name airshare \
   ghcr.io/jaberio/airshare:latest
 
-# Visit: http://localhost:4111
+# Visit: http://localhost:3000
 ```
 
 ### Local Development
@@ -88,15 +60,15 @@ npm start
 │   (Sender)      │         │   (Receiver)    │
 └────────┬────────┘         └────────┬────────┘
          │                           │
-         │ Socket.IO (Signaling)     │
+         │ PeerJS (WebRTC Signaling)│
          ├──────────────────────────┤
-         │ (SDP, ICE candidates)    │
+         │  (Encrypted File Data)   │
          │                          │
          └──────────────────────────┴──────────┐
                                                │
                                     ┌──────────▼──────────┐
-                                    │   Node.js Server    │
-                                    │  (Relay, Config)    │
+                                    │   PeerJS Cloud      │
+                                    │  (0.peerjs.com)     │
                                     └─────────────────────┘
          
          WebRTC DataChannel (P2P)
