@@ -653,7 +653,8 @@ footer p {
     opacity: 0.8;
 }
 
-.footer-bar {
+
+.footer-row {
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -666,34 +667,96 @@ footer p {
     text-align: left;
 }
 
-.footer-info {
+.footer-links {
     display: flex;
-    flex-direction: column;
+    justify-content: flex-start;
+    gap: 0.5rem;
+    align-items: center;
+    flex-wrap: wrap;
 }
 
-.footer-help {
-    width: 36px;
-    height: 36px;
-    padding: 0;
-    border-radius: 50%;
+.footer-link {
+    color: var(--text-secondary);
+    text-decoration: none;
+    transition: color 0.2s;
+}
+
+.footer-link:hover {
+    color: var(--accent-color);
+    text-decoration: underline;
+}
+
+.separator {
+    color: var(--text-secondary);
+}
+
+.footer-info {
+    margin-left: auto;
+    position: relative;
+}
+
+.footer-info summary {
+    list-style: none;
+}
+
+.footer-info summary::-webkit-details-marker {
+    display: none;
+}
+
+.footer-call {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.4rem 0.6rem;
+    border-radius: 999px;
     border: 1px solid var(--border-color);
     background: var(--bg-color);
     color: var(--text-primary);
-    font-weight: 700;
-    line-height: 1;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
+    font-weight: 600;
     cursor: pointer;
+    user-select: none;
     transition: all 0.2s ease;
-    flex-shrink: 0;
 }
 
-.footer-help:hover {
+.footer-call:hover {
     background: var(--accent-color);
     border-color: var(--accent-color);
     color: #ffffff;
     transform: translateY(-1px);
+}
+
+.call-sign {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    border: 1px solid currentColor;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.85rem;
+}
+
+.call-caret {
+    font-size: 0.8rem;
+}
+
+.footer-info[open] .call-caret {
+    transform: rotate(180deg);
+}
+
+.footer-info-content {
+    position: absolute;
+    right: 0;
+    bottom: calc(100% + 0.75rem);
+    min-width: 280px;
+    max-width: 360px;
+    padding: 0.75rem 1rem;
+    background: var(--surface-color);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    box-shadow: var(--card-shadow);
+    text-align: left;
+    z-index: 5;
 }
 
 /* Utility Classes */
@@ -736,12 +799,16 @@ footer p {
         align-items: flex-start;
     }
 
-    .footer-bar {
+    .footer-row {
         flex-direction: column;
-        align-items: flex-start;
+        align-items: stretch;
     }
 
-    .footer-help {
+    .footer-links {
+        justify-content: center;
+    }
+
+    .footer-info {
         align-self: flex-end;
     }
 }
